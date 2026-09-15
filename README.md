@@ -64,7 +64,7 @@ ipsa <group> <command> --help
 | `tx query` | `--clients [--stellar\|--cosmos] [--client-id]` · `--address [--denom]` (balance reads) |
 | `services` | `pull` · `up` · `restart` · `down` · `build` · `push` (`[--api\|--gateway\|--cosmos]`) |
 | `gateway` | `query` |
-| `test` | `[--ics ics02-clients\|ics02-counterparty\|ics20-transfer\|ics02-query]` |
+| `test` | `[--ics ics02-clients\|ics02-counterparty\|ics20-transfer\|ics20-relay\|ics02-query]` |
 
 ---
 
@@ -228,7 +228,7 @@ from the address); `--denom` filters to a single denom.
 ## `test` — ICS integration flows
 
 ```sh
-ipsa test [--ics ics02-clients|ics02-counterparty|ics20-transfer|ics02-query]
+ipsa test [--ics ics02-clients|ics02-counterparty|ics20-transfer|ics20-relay|ics02-query]
 ```
 
 Runs the happy-path integration flow for each ICS milestone against a **running
@@ -243,11 +243,12 @@ under Eureka; token transfer is ICS-20.
 | `ics02-clients` | creates the counterparty (`07-tendermint`) and Stellar (`08-wasm`) clients and checks the returned ids |
 | `ics02-counterparty` | bootstraps clients + counterparties and checks the Stellar router lists the paired clients |
 | `ics20-transfer` | originates a Stellar→counterparty ICS-20 transfer, waits for the relay round trip to close, and checks the counterparty voucher increased |
+| `ics20-relay` | relays a transfer each way — Stellar→counterparty in `XLM`, counterparty→Stellar in `stake` — and checks both are delivered and acknowledged |
 | `ics02-query` | checks the api `/health` + `/stellar/clients` reads and the counterparty `client_states` read |
 
-The flow bodies live in `src/tests/` (one file per ICS). CI runs
-them per-milestone via the `ipsa.yml` workflow — each ICS is a separate,
-independently re-runnable job.
+The flow bodies live in `src/tests/` (one file per ICS). CI runs them via the
+`ics-flows.yml` workflow — each ICS is a separate, independently re-runnable
+step.
 
 ---
 
