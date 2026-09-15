@@ -1,0 +1,46 @@
+[package]
+name = "ipsa-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81.0"
+license = "Apache-2.0"
+description = "Orchestrator CLI for the Stellar and Cosmos IBC bridge"
+repository = "https://github.com/ipsadev/ipsa-tooling"
+
+[[bin]]
+name = "ipsa"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+clap = { version = "4.5", features = ["derive"] }
+cosmrs = { version = "0.22", features = ["cosmwasm"] }
+dotenvy = "0.15"
+ed25519-dalek = "2"
+hex = "0.4"
+ibc-proto = { version = "0.52", default-features = false, features = [
+  "std",
+  "serde",
+] }
+indicatif = "0.17.8"
+prost = "0.14"
+prost13 = { package = "prost", version = "0.13" }
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = "1.0.150"
+sha2 = "0.10"
+stellar-strkey = "0.0.16"
+tokio = { version = "1.52.3", features = [
+  "time",
+  "rt-multi-thread",
+  "macros",
+  "sync",
+] }
+tonic = "0.14.6"
+tonic-prost = "0.14.6"
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+
+[lints.rust]
+unsafe_code = "forbid"
