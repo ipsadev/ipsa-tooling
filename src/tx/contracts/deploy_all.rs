@@ -29,12 +29,11 @@ pub fn run(
     let genesis = super::latest_ledger(cfg, root)?;
     logger::detail(&format!("router genesis ledger: {genesis}"));
 
-    super::build::run(root)?;
+    let wasm_dir = super::release::fetch(root)?;
 
     let deployer = deployer_address(cfg)?;
     logger::detail(&format!("deployer: {deployer}"));
 
-    let wasm_dir = root.join("contracts/soroban/target/wasm32v1-none/contract");
     let wasm = |name: &str| wasm_dir.join(name).display().to_string();
 
     let mut mock_id = String::new();
@@ -167,7 +166,7 @@ pub fn run(
     )?;
 
     logger::step("wiring gmp account factory (upload gmp-account wasm + set_account_wasm)");
-    let account_hash = super::upload::hash(cfg, root, &wasm("stellar_gmp_account.wasm"))?;
+    let account_hash = super::upload::hash(cfg, root, &wasm("ipsa_gmp_account.wasm"))?;
     logger::detail(&format!("gmp account wasm hash: {account_hash}"));
     super::invoke(
         cfg,
@@ -193,9 +192,9 @@ pub fn run(
     wire_relayer(cfg, &router, &transfer);
 
     logger::ok("deploy-all complete");
-    logger::step("deployed addresses");
 
-    for (name, value) in [
+    let genesis = genesis.to_string();
+    let addresses = [
         ("ROUTER_CONTRACT_ADDRESS", router.as_str()),
         ("TRANSFER_CONTRACT_ADDRESS", transfer.as_str()),
         ("GMP_CONTRACT_ADDRESS", gmp.as_str()),
@@ -203,12 +202,32 @@ pub fn run(
         ("ATTESTATION_LC_CONTRACT_ID", attestation_id.as_str()),
         ("TENDERMINT_LC_CONTRACT_ID", tendermint_id.as_str()),
         ("DEPLOYER_ADDRESS", deployer.as_str()),
-        ("ROUTER_GENESIS_LEDGER", genesis.to_string().as_str()),
-    ] {
+        ("ROUTER_GENESIS_LEDGER", genesis.as_str()),
+    ];
+
+    let env = root.join(".env");
+    logger::step(&format!("writing deployed addresses to {}", env.display()));
+    crate::shared::env_upsert(&env, &addresses)?;
+
+    for (name, value) in addresses {
         logger::detail(&format!("{name}={value}"));
     }
 
-    logger::hint("set these in .env, then: ipsa api restart --pull && ipsa gateway restart --pull");
+    let stale = ["COSMOS_CLIENT_ID", "STELLAR_CLIENT_ID"]
+        .into_iter()
+        .filter(|name| !crate::config::get(name, "").is_empty())
+        .collect::<Vec<_>>();
+
+    if !stale.is_empty() {
+        logger::warn(&format!(
+            "{} still name clients on the previous router — recreate them with `ipsa tx clients create --force`",
+            stale.join(", ")
+        ));
+    }
+
+    logger::hint(
+        "the api and gateway read these at startup: ipsa services restart --api --gateway",
+    );
 
     Ok(true)
 }

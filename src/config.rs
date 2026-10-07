@@ -137,6 +137,7 @@ pub struct Config {
     pub gateway: GatewayConfig,
     pub deployment: DeploymentConfig,
     pub accounts: AccountsConfig,
+    pub evm: crate::tx::evm::config::EvmCorridorConfig,
 }
 
 pub fn get(key: &str, default: &str) -> String {
@@ -177,6 +178,7 @@ impl Config {
                 stellar_client_id: get("STELLAR_CLIENT_ID", ""),
             },
             accounts: AccountsConfig::from_env(),
+            evm: crate::tx::evm::config::EvmCorridorConfig::from_env(),
         }
     }
 

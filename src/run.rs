@@ -11,7 +11,30 @@ use anyhow::{bail, Context, Result};
 use crate::logger;
 
 fn log_cmd(program: &str, args: &[&str]) {
-    crate::logger::detail(&format!("$ {program} {}", args.join(" ")));
+    crate::logger::detail(&format!("$ {program} {}", shown(args)));
+}
+
+fn shown(args: &[&str]) -> String {
+    let redacted: Vec<&str> = args
+        .iter()
+        .map(|argument| {
+            if is_stellar_secret(argument) {
+                "S…(secret)"
+            } else {
+                argument
+            }
+        })
+        .collect();
+
+    redacted.join(" ")
+}
+
+fn is_stellar_secret(argument: &str) -> bool {
+    argument.len() == 56
+        && argument.starts_with('S')
+        && argument
+            .chars()
+            .all(|character| character.is_ascii_uppercase() || ('2'..='7').contains(&character))
 }
 
 pub fn command(root: &Path, program: &str, args: &[&str]) -> Result<()> {
@@ -30,7 +53,7 @@ fn command_inherit(root: &Path, program: &str, args: &[&str]) -> Result<()> {
         .status()
         .with_context(|| format!("failed to spawn {program}"))?;
     if !status.success() {
-        bail!("{program} {} exited with {status}", args.join(" "));
+        bail!("{program} {} exited with {status}", shown(args));
     }
     Ok(())
 }
@@ -80,7 +103,7 @@ fn command_streaming(
 
     let status = child.wait().with_context(|| format!("{program} failed"))?;
     if !status.success() {
-        bail!("{program} {} exited with {status}", args.join(" "));
+        bail!("{program} {} exited with {status}", shown(args));
     }
     Ok(())
 }
@@ -105,7 +128,7 @@ pub fn piped(root: &Path, program: &str, args: &[&str], input: &str) -> Result<(
     let status = child.wait().with_context(|| format!("{program} failed"))?;
 
     if !status.success() {
-        bail!("{program} {} exited with {status}", args.join(" "));
+        bail!("{program} {} exited with {status}", shown(args));
     }
 
     Ok(())
@@ -122,7 +145,7 @@ pub fn capture(root: &Path, program: &str, args: &[&str]) -> Result<String> {
         .with_context(|| format!("failed to spawn {program}"))?;
 
     if !output.status.success() {
-        bail!("{program} {} exited with {}", args.join(" "), output.status);
+        bail!("{program} {} exited with {}", shown(args), output.status);
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -142,7 +165,7 @@ pub fn capture_quiet(root: &Path, program: &str, args: &[&str]) -> Result<String
 
         bail!(
             "{program} {} exited with {}:\n{stderr}",
-            args.join(" "),
+            shown(args),
             output.status
         );
     }
@@ -165,12 +188,52 @@ pub fn capture_all(root: &Path, program: &str, args: &[&str]) -> Result<String> 
     if !output.status.success() {
         bail!(
             "{program} {} exited with {}:\n{combined}",
-            args.join(" "),
+            shown(args),
             output.status
         );
     }
 
     Ok(combined)
+}
+
+pub fn capture_with_input(
+    root: &Path,
+    program: &str,
+    args: &[&str],
+    input: &str,
+) -> Result<String> {
+    log_cmd(program, args);
+
+    let mut child = Command::new(program)
+        .args(args)
+        .current_dir(root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("failed to spawn {program}"))?;
+
+    child
+        .stdin
+        .take()
+        .context("child stdin unavailable")?
+        .write_all(input.as_bytes())
+        .context("failed to write to child stdin")?;
+
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("{program} failed"))?;
+
+    if !output.status.success() {
+        bail!(
+            "{program} {} exited with {}:\n{}",
+            shown(args),
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 pub fn has(program: &str) -> bool {

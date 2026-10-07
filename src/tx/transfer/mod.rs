@@ -111,6 +111,15 @@ pub fn stellar_to_cosmos(
         ));
     }
 
+    let denom = assets::registered_denom(&cc, root, transfer_app, &entry)?;
+
+    if denom != args.denom {
+        logger::detail(&format!(
+            "the transfer app registers {} as {denom}",
+            args.denom
+        ));
+    }
+
     logger::step(&format!(
         "initiate_transfer {} {} → {receiver} (client {source_client}, timeout {timeout})",
         args.amount, args.denom
@@ -127,7 +136,7 @@ pub fn stellar_to_cosmos(
             "--source_client_id",
             source_client,
             "--denom",
-            &args.denom,
+            &denom,
             "--amount",
             &amount,
             "--receiver",

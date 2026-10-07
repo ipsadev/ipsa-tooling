@@ -9,6 +9,8 @@ const ARCHIVE_MARGIN_SECS: u64 = 120;
 
 const SERVED_SECS: u64 = 180;
 
+const EVM_CORRIDOR_SECS: u64 = 3_600;
+
 pub struct Budget {
     pub seconds: u64,
     pub reason: String,
@@ -18,12 +20,20 @@ pub async fn derive(
     rc: &RelayConfig,
     http: &reqwest::Client,
     source: Chain,
+    destination: Chain,
     explicit: Option<u64>,
 ) -> Budget {
     if let Some(seconds) = explicit {
         return Budget {
             seconds,
             reason: "as asked".to_string(),
+        };
+    }
+
+    if matches!(source, Chain::Evm) || matches!(destination, Chain::Evm) {
+        return Budget {
+            seconds: EVM_CORRIDOR_SECS,
+            reason: "the EVM corridor waits for Ethereum finality and proves on the Succinct network, once for the packet and again for its acknowledgement".to_string(),
         };
     }
 

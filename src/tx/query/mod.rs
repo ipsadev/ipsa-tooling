@@ -5,6 +5,7 @@ use anyhow::{bail, Result};
 
 use crate::{
     config::Config,
+    logger,
     shared::{self, Chain},
 };
 
@@ -65,6 +66,9 @@ pub async fn get_clients(
         Chain::Cardano => {
             unimplemented!()
         }
+        Chain::Evm => {
+            logger::warn("client queries on the EVM side are not built yet");
+        }
         Chain::All => {
             clients::stellar_clients(cfg, http, id).await;
             clients::cosmos_clients(cfg, http, id).await;
@@ -93,6 +97,9 @@ async fn balance_of(
                 }
                 Chain::Cardano => {
                     unimplemented!()
+                }
+                Chain::Evm => {
+                    logger::warn("balance queries on the EVM side are not built yet");
                 }
                 Chain::All => {
                     balances::stellar_balances(cfg, root, &address, denom);

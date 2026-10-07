@@ -63,7 +63,7 @@ pub async fn run(root: &Path, cfg: &Config, http: &reqwest::Client) -> Result<()
     logger::status_line(cfg.cosmos.chain_id.as_str(), cosmos, &cfg.cosmos.rest_url);
 
     let api = probe::http_ok(http, &format!("{}/health", cfg.stellar.api_url)).await;
-    logger::status_line("stellar-api", api, &cfg.stellar.api_url);
+    logger::status_line("ipsa-api", api, &cfg.stellar.api_url);
 
     let gateway = probe::tcp_ok(&cfg.stellar.gateway_url);
     logger::status_line("gateway-grpc", gateway, &cfg.stellar.gateway_url);

@@ -107,6 +107,42 @@ pub fn register_all(cfg: &ContractsConfig, root: &Path, transfer_app: &str) -> R
     Ok(())
 }
 
+pub fn registered_denom(
+    cfg: &ContractsConfig,
+    root: &Path,
+    transfer_app: &str,
+    entry: &AssetEntry,
+) -> Result<String> {
+    if entry.voucher {
+        return Ok(entry.denom.clone());
+    }
+
+    let sac = resolve_sac(cfg, root, &entry.asset)?;
+    let output = contracts::invoke_as(cfg, root, transfer_app, &["assets"], &cfg.signing_key)?;
+
+    let listing = output
+        .lines()
+        .map(str::trim)
+        .rfind(|line| line.starts_with('['))
+        .with_context(|| format!("the transfer app {transfer_app} listed no assets"))?;
+
+    let assets: Vec<serde_json::Value> = serde_json::from_str(listing)
+        .with_context(|| format!("the transfer app's asset list is not JSON: {listing}"))?;
+
+    let denom = assets
+        .iter()
+        .find(|asset| asset["address"].as_str() == Some(sac.as_str()))
+        .and_then(|asset| asset["denom"].as_str())
+        .with_context(|| {
+            format!(
+                "{} ({sac}) is not registered on the transfer app {transfer_app}",
+                entry.denom
+            )
+        })?;
+
+    Ok(denom.to_string())
+}
+
 pub fn resolve_sac(cfg: &ContractsConfig, root: &Path, asset: &str) -> Result<String> {
     let args = [
         "contract",

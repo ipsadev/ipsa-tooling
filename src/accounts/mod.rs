@@ -19,7 +19,7 @@ pub fn show(cfg: &Config) {
     account_line("receiver", &cfg.accounts.stellar_receiver_address);
     account_line("deployer / admin", &cfg.deployment.deployer_address);
     logger::detail(&format!(
-        "relayer signer key: {} (held by stellar-api, not the gateway)",
+        "relayer signer key: {} (held by ipsa-api, not the gateway)",
         cfg.stellar.key_name
     ));
 

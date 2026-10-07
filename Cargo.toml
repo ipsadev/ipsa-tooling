@@ -12,6 +12,8 @@ name = "ipsa"
 path = "src/main.rs"
 
 [dependencies]
+stellar-xdr = { version = "28.0.0", default-features = false, features = ["std", "base64"] }
+alloy = { version = "1", default-features = false, features = ["std", "providers", "signer-local", "network", "rpc-types", "reqwest-rustls-tls", "sol-types"] }
 anyhow = "1"
 base64 = "0.22"
 clap = { version = "4.5", features = ["derive"] }

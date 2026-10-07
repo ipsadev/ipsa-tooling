@@ -4,7 +4,7 @@
 Stellar↔counterparty IBC v2 bridge. It brings the stack up, builds/pushes images,
 deploys the Soroban contracts, uploads the light client, creates clients,
 registers counterparties, and reports status — driving **docker**, the
-**`stellar`** CLI, and **`stellar-api`** directly. There are no shell scripts.
+**`stellar`** CLI, and **`ipsa-api`** directly. There are no shell scripts.
 
 It lives in its own repo. The stack it drives lives in `ipsa-backend`; point
 `STELLAR_IBC_ROOT` at that checkout, or run `ipsa` from inside it.
@@ -19,10 +19,15 @@ It lives in its own repo. The stack it drives lives in `ipsa-backend`; point
   rest of the stack). See [Configuration](#configuration).
 - **Health probes** — native HTTP (counterparty REST, api `/health`) and TCP (gateway
   gRPC) checks; no external tools required for `check` / `status`.
-- **Contract addresses** — read from `.env`, never written. Deployment is done by
-  `contracts-cd` in the [ipsa-contracts](https://github.com/ipsadev/ipsa-contracts)
-  repo; take the addresses it reports and set them in `.env`. Commands that need
-  an address fail with the variable name when it is missing.
+- **Contracts** — the Soroban wasm comes from a GitHub release of
+  [ipsa-contracts](https://github.com/ipsadev/ipsa-contracts), the tag pinned as
+  `RELEASE_TAG` in `src/tx/contracts/release.rs`. It is downloaded with `gh` into
+  `dist/contracts/<tag>/` and every file is checked against the release's
+  `SHA256SUMS` before anything is uploaded or deployed; a verified copy is reused.
+  The repository is private, so `gh auth login` first. Nothing is built locally.
+  `tx contracts deploy --stellar` writes the addresses it deploys, and the
+  router's genesis ledger, into `.env`. Commands that need an address fail with
+  the variable name when it is missing.
 
 ---
 
@@ -79,7 +84,7 @@ Checks prerequisites and configuration, then probes service health. Reports:
 toolchain (`docker`, `stellar`, `cargo`), `.env` presence, key config vars
 (`STELLAR_SIGNING_KEY`, `ROUTER_CONTRACT_ADDRESS`, …), the configured endpoints,
 the deployed contract ids (from `.env`), and the live state of the counterparty
-chain (the `cosmos` compose service, `simd-1`), `stellar-api`, and the gateway
+chain (the `cosmos` compose service, `simd-1`), `ipsa-api`, and the gateway
 gRPC port. Always exits 0.
 
 ### `ipsa up [--cosmos | --stellar]`
@@ -99,17 +104,34 @@ Stops the stack via `docker compose down`.
 | `--volumes` | also remove named volumes (wipes chain + relayer-key state) |
 
 ### `ipsa start`
-Full start: pull images → start `cosmos` → start `api` + `gateway` → deploy
-contracts → upload the light-client wasm → import relayer keys → provision the
-sender + receiver accounts. Each step is skippable; the chain/service steps are
-idempotent (probe first, start if down).
+Full start, from an empty `.env` to a corridor the relayer can carry both ways:
+
+1. pull images
+2. start `cosmos` and the stellar-core watcher
+3. start `api` + `gateway`
+4. deploy the Soroban contracts and write their addresses and
+   `ROUTER_GENESIS_LEDGER` to `.env`, then recreate `api` + `gateway` so they
+   read them
+5. provision the sender + receiver accounts
+6. store the light-client wasm on cosmos (gov store-code + vote)
+7. create the `07-tendermint` client on Stellar and the `08-wasm` client on
+   cosmos, routing both in `relayer.yml`
+8. register each client as the other's counterparty
+9. import the relayer keys, start postgres, and start the relayer, recreating
+   it when `relayer.yml` changed
+
+Every step is idempotent: a deployed router, a stored checksum and existing
+client ids are kept. Counterparties are only registered when a client was
+created in this run. When the contracts are redeployed, the clients are
+recreated on the new router.
 
 | Flag | Effect |
 |---|---|
 | `--skip-images` | skip pulling the docker images |
-| `--skip-contracts` | skip the Soroban contract deploy |
 | `--skip-accounts` | skip provisioning the sender + receiver accounts |
-| `--force-redeploy` | redeploy contracts even if `ROUTER_CONTRACT_ADDRESS` is set |
+| `--skip-clients` | skip the light-client wasm, the clients and the counterparties |
+| `--skip-relayer` | skip the relayer keys, postgres and the relayer |
+| `--deploy-contracts` | redeploy the contracts even if `ROUTER_CONTRACT_ADDRESS` is set |
 
 ---
 
@@ -166,7 +188,8 @@ each wasm hash.
   (the wasm file name without `.wasm`, e.g. `stellar_ibc_router`) deploy just
   that one; omit it for the full build + deploy + wire-router orchestration
   (`--force` redeploys, `--attestation` also deploys the attestation LC). The
-  addresses are printed, not written; set them in `.env` yourself.
+  addresses and `ROUTER_GENESIS_LEDGER` are written to `.env`; restart the api
+  and gateway to pick them up.
 - `--cosmos`: store the light-client code on the counterparty chain (08-wasm gov store-code).
 
 ### `ipsa tx contracts invoke --id <contract> -- <fn> <args>`
@@ -199,7 +222,7 @@ chain is read off the hash case, and an ambiguous hash asks for the flag).
 
 `--status` reports the packets without submitting, `--wait` polls until each one
 completes or fails (`--timeout-secs`, `--interval-secs`). The call goes through
-`stellar-api` (`POST /relay`, `GET /relay/status`), which owns the gRPC
+`ipsa-api` (`POST /relay`, `GET /relay/status`), which owns the gRPC
 connection to the relayer.
 
 ```sh
@@ -207,6 +230,109 @@ ipsa tx relay --tx <stellar-tx-hash> --stellar --wait
 ipsa tx relay --tx <counterparty-tx-hash> --cosmos
 ipsa tx relay --tx <hash> --status
 ```
+
+---
+
+## The Stellar ↔ EVM corridor
+
+Stellar and an EVM chain are joined by two zk light clients: an `SP1ICSStellar`
+client on the EVM chain, and an SP1 Ethereum client on the Soroban router. Packets
+are delivered the same way as on the Cosmos corridor — `ipsa` hands the source
+transaction to `ipsa-api`, and `ibc-relayer` asks the proof API for the
+transactions, submits them, and carries the acknowledgement back. The proof API is
+`stellar-proof-api` from the `ibc-contracts` fork; the relayer reaches it as its
+`ibcv2_proof_api` (see `ipsa-backend/relayer.yml`).
+
+### `ipsa tx transfer --from G… --to 0x… --amount <n> [--denom XLM]`
+
+A `0x…` destination routes the transfer to the corridor's Soroban transfer app
+(`STELLAR_EVM_TRANSFER`) on the client `STELLAR_EVM_CLIENT_ID`. `--denom XLM`
+resolves to the native asset's contract id, which is the denom the app escrows
+under; any other denom is passed through as the app knows it. The signing identity
+is `EVM_STELLAR_SENDER_IDENTITY`, or `DEPLOYER_IDENTITY` when that is unset, and it
+must own the `--from` address.
+
+The timeout is raised to at least six hours: a packet cannot be received until
+the history archive publishes its ledger's checkpoint and two proofs are made.
+`--relay` hands it to the relayer straight away, and `--wait` follows it.
+
+### `ipsa tx transfer --from 0x… --to G… --amount <n> --denom <0x token>`
+
+A `0x…` source sends from the EVM side: `approve` the amount to
+`EVM_ICS20_TRANSFER`, then `ICS20Transfer.sendTransfer` on the client
+`EVM_STELLAR_CLIENT_ID`, each simulated before it is sent from `EVM_PRIVATE_KEY`
+(which must own `--from`). `--denom` is the token contract; an `IBCERC20`
+voucher's address sends that asset home. The timeout is held between six hours
+and the router's one-day ceiling.
+
+### `ipsa tx relay --tx <stellar hash> --evm` and `ipsa tx relay --tx <0x hash>`
+
+Hands the transaction to the relayer under the corridor's chain ids —
+`STELLAR_EVM_CHAIN_ID` for a Stellar source, `EVM_CHAIN_ID` for an `0x…` one — and,
+with `--wait`, follows its packets until the acknowledgement is back. The wait
+defaults to an hour: an EVM source waits for Ethereum finality, a Stellar source
+for its history-archive checkpoint, and each leg is proved on the Succinct network.
+
+### `ipsa tx relay … --direct`
+
+Skips the relayer: `ipsa` calls the proof API's `RelayByTx` itself (at
+`PROOF_API_URL`, under the same chain ids) and submits what it returns.
+
+- A Stellar source (`--evm`) returns `ICS26Router.multicall(updateClient,
+  recvPacket | ackPacket)` calldata and an address. `ipsa` refuses to send it
+  anywhere but `EVM_ICS26_ROUTER`, simulates it, sends it from `EVM_PRIVATE_KEY`,
+  and waits for the receipt.
+- An `0x…` source returns Soroban calls on `STELLAR_EVM_ROUTER` — `update_client`
+  for each header, then `recv_packet` or `acknowledge_packet`. `ipsa` refuses any
+  call to another contract or any other function, then submits each with the
+  stellar CLI (`tx update sequence-number next` → `tx simulate` → `tx sign` →
+  `tx send`), signed by `STELLAR_EVM_RELAYER_IDENTITY` or `DEPLOYER_IDENTITY`.
+
+The resulting transaction hashes are printed on stdout. An acknowledgement is
+relayed the same way: pass the EVM transaction that received a Stellar packet, or
+`--evm` with the Stellar transaction that received an EVM packet. When the proof
+API runs with `"prover": "execute"` it proves nothing and returns an empty
+transaction, which `ipsa` reports as a passed dry run. The proof API reports
+failures to callers only as a generic status; the reason is in its own log.
+
+### `ipsa tx clients create --evm` and `ipsa tx clients counterparty --evm`
+
+`create --evm` creates both zk light clients through the proof API's
+`CreateClient`. On Stellar it submits the one `create_client` call the proof API
+returns — the genesis carries the next sync committee, so the client can cross
+periods — and reads the new id from the transaction's return value. On the EVM
+side it deploys the `SP1ICSStellar` creation code the proof API returns (genesis at
+the latest archived ledger, the router as role manager) and registers it with
+`addClient` under `EVM_STELLAR_CLIENT_ID`, naming the Stellar client as its
+counterparty. `counterparty --evm` then registers `EVM_STELLAR_CLIENT_ID` as the
+Soroban client's counterparty.
+
+Pick a fresh `EVM_STELLAR_CLIENT_ID` whenever the Stellar side is a new router: its
+sequences restart at 1, and the EVM router still holds receipts for the old ones
+under an old id.
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EVM_RPC_URL` | _(required)_ | JSON-RPC endpoint of the EVM chain |
+| `EVM_PRIVATE_KEY` | _(required)_ | key that sends EVM transfers, and relay transactions with `--direct` (then it needs the router's `RELAYER_ROLE`, as the relayer's own key does) |
+| `EVM_ICS26_ROUTER` | _(required)_ | `ICS26Router` proxy; the only address `ipsa` will send a relay to |
+| `EVM_STELLAR_CLIENT_ID` | `stellar-testnet-1` | the Stellar client's id on the EVM router |
+| `EVM_ICS20_TRANSFER` | _(required for EVM transfers)_ | `ICS20Transfer` proxy |
+| `STELLAR_EVM_ROUTER` | `ROUTER_CONTRACT_ADDRESS` | the corridor's Soroban router; the only contract `ipsa` will call for a relay |
+| `STELLAR_EVM_TRANSFER` | `TRANSFER_CONTRACT_ADDRESS` | the corridor's Soroban transfer app |
+| `STELLAR_EVM_RELAYER_IDENTITY` | `DEPLOYER_IDENTITY` | stellar CLI identity that signs Soroban relay transactions |
+| `STELLAR_EVM_CLIENT_ID` | `sepolia-0` | the EVM client's id on the Soroban router |
+| `STELLAR_EVM_CLIENT_TYPE` | `sepolia` | the client type `create --evm` asks the Soroban router for |
+| `EVM_STELLAR_SENDER_IDENTITY` | `DEPLOYER_IDENTITY` | stellar CLI identity that signs transfers |
+| `STELLAR_EVM_CHAIN_ID` / `EVM_CHAIN_ID` | `STELLAR_CHAIN_ID` / `11155111` | the corridor's chain ids: the relayer's `chain_id`s and the proof API modules' `src_chain` / `dst_chain` |
+| `PROOF_API_URL` | `http://127.0.0.1:3100` | where `stellar-proof-api` listens (`--direct` and `clients create --evm`) |
+
+One Stellar router serves both corridors, so the Stellar side follows the stack's own
+`ROUTER_CONTRACT_ADDRESS`, `TRANSFER_CONTRACT_ADDRESS` and `STELLAR_CHAIN_ID` unless the
+`STELLAR_EVM_*` variables say otherwise. `.env.example` in `ipsa-backend` lists the EVM values
+for the live Sepolia corridor.
 
 ---
 
@@ -367,8 +493,9 @@ ipsa/src/
   tx/                write operations grouped under `tx`
     mod.rs           tx command tree (clients · contracts · transfer · query) + side routing
     clients/         create (cosmos/stellar) · counterparty · config
-    contracts/       upload · deploy_all · wasm · build · config (+ deploy_one/invoke)
+    contracts/       upload · deploy_all · wasm · release · config (+ deploy_one/invoke)
     transfer/        ICS-20 transfer origination (stellar → counterparty)
+    evm/             the Stellar ↔ EVM corridor: config · transfers both ways · direct relays through the proof API · client creation · Soroban host-function submission
     query/           client-state reads (clients.rs) + address-routed balances (balances.rs)
   services/          service lifecycle + images grouped under `services`
     mod.rs           pull/up/restart/down/build/push (api · gateway · cosmos · relayer)

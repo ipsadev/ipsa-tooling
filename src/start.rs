@@ -6,8 +6,12 @@ use crate::{
     config::Config,
     logger, probe, run,
     services::{self, relayer, Service},
+    shared::StartArgs,
     tools,
-    tx::contracts::config::ContractsConfig,
+    tx::{
+        clients::{self, config::ClientsConfig},
+        contracts::{self, config::ContractsConfig},
+    },
 };
 
 const WAIT_TIMEOUT_SECS: u64 = 300;
@@ -16,18 +20,17 @@ pub async fn run(
     cfg: &Config,
     root: &Path,
     http: &reqwest::Client,
-    skip_images: bool,
-    skip_accounts: bool,
-    skip_relayer: bool,
-    deploy_contracts: bool,
+    args: &StartArgs,
 ) -> Result<()> {
     logger::banner("start");
+
+    let deploy_contracts = args.deploy_contracts;
 
     if !run::has("docker") {
         bail!("docker not found in PATH — required to bring up the stack");
     }
 
-    if skip_images {
+    if args.skip_images {
         logger::detail("skip image pull");
     } else {
         logger::step("Step 0: pulling images (cosmos, watcher, api, gateway, postgres, relayer)");
@@ -71,7 +74,7 @@ pub async fn run(
     }
 
     logger::step("Step 3: deploying Soroban contracts");
-    let deployed = crate::tx::contracts::deploy_all::run(
+    let deployed = contracts::deploy_all::run(
         &ContractsConfig::from(cfg),
         root,
         deploy_contracts,
@@ -102,23 +105,79 @@ pub async fn run(
         logger::detail("contracts already deployed — skipping api + gateway recreate");
     }
 
-    if skip_accounts {
+    let cfg = Config::load(root);
+
+    if args.skip_accounts {
         logger::detail("skip sender + receiver account provisioning");
     } else {
         logger::step("Step 4: provisioning sender + receiver accounts");
-        crate::accounts::provision(cfg, root, false)?;
+        crate::accounts::provision(&cfg, root, false)?;
     }
 
-    if skip_relayer {
+    let created = if args.skip_clients {
+        logger::detail("skip light-client wasm, clients and counterparties");
+
+        false
+    } else {
+        pair_clients(root, http, deployed).await?
+    };
+
+    let cfg = Config::load(root);
+
+    if args.skip_relayer {
         logger::detail("skip ibcv2 relayer");
     } else {
-        logger::step("Step 5: writing relayer keys + starting postgres and the relayer");
-        relayer::keys::import(cfg, root)?;
-        services::up(root, &[Service::Postgres, Service::Relayer])?;
+        logger::step("Step 8: writing relayer keys + starting postgres and the relayer");
+        relayer::keys::import(&cfg, root)?;
+        services::up(root, &[Service::Postgres])?;
+
+        if deployed || created {
+            logger::detail(
+                "relayer.yml changed — recreating the relayer so it reads the new routes",
+            );
+            services::restart(root, &[Service::Relayer])?;
+        } else {
+            services::up(root, &[Service::Relayer])?;
+        }
     }
 
     logger::ok("start complete");
-    logger::hint("check: ipsa check   then: ipsa tx clients create --cosmos");
+    logger::hint("check: ipsa check   then: ipsa test --ics ics20-relay");
 
     Ok(())
+}
+
+async fn pair_clients(root: &Path, http: &reqwest::Client, force: bool) -> Result<bool> {
+    logger::step("Step 5: storing the stellar light-client wasm on cosmos");
+    contracts::wasm::upload(root, http, false, None).await?;
+
+    let cfg = Config::load(root);
+    let before = ClientsConfig::from(&cfg);
+
+    logger::step("Step 6: creating the cosmos client on stellar and the stellar client on cosmos");
+    if force {
+        logger::detail("contracts were redeployed — creating clients on the new router");
+    }
+
+    clients::cosmos::run(&cfg, &before, root, http, force).await?;
+
+    let cfg = Config::load(root);
+    clients::stellar::run(&cfg, &ClientsConfig::from(&cfg), root, http, force).await?;
+
+    let cfg = Config::load(root);
+    let after = ClientsConfig::from(&cfg);
+
+    let created = force || before.cosmos_client.is_none() || before.stellar_client.is_none();
+
+    if !created {
+        logger::detail("both clients already existed — counterparties are already registered");
+
+        return Ok(false);
+    }
+
+    logger::step("Step 7: registering each client as the other's counterparty");
+    clients::counterparty::run(&cfg, &after, root, http, "stellar").await?;
+    clients::counterparty::run(&cfg, &after, root, http, "cosmos").await?;
+
+    Ok(true)
 }

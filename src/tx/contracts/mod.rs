@@ -1,6 +1,6 @@
-pub mod build;
 pub mod config;
 pub mod deploy_all;
+pub mod release;
 pub mod upload;
 pub mod wasm;
 
@@ -10,7 +10,7 @@ use anyhow::{bail, Result};
 
 use crate::{logger, tools, tx::contracts::config::ContractsConfig};
 
-const SOROBAN_WASMS: [&str; 5] = [
+pub(crate) const SOROBAN_WASMS: [&str; 5] = [
     "stellar_mock_light_client",
     "stellar_ibc_router",
     "stellar_ibc_transfer",
@@ -18,21 +18,18 @@ const SOROBAN_WASMS: [&str; 5] = [
     "stellar_attestation_light_client",
 ];
 
-fn wasm_path(root: &Path, name: &str) -> String {
-    root.join("contracts/soroban/target/wasm32v1-none/contract")
-        .join(format!("{name}.wasm"))
-        .display()
-        .to_string()
+fn wasm_path(directory: &Path, name: &str) -> String {
+    directory.join(format!("{name}.wasm")).display().to_string()
 }
 
 pub fn upload_all(cfg: &ContractsConfig, root: &Path) -> Result<()> {
     logger::banner("tx contracts upload (install all soroban wasms)");
 
-    build::run(root)?;
+    let directory = release::fetch(root)?;
 
     for name in SOROBAN_WASMS {
         logger::step(&format!("uploading {name}"));
-        upload::run(cfg, root, &wasm_path(root, name))?;
+        upload::run(cfg, root, &wasm_path(&directory, name))?;
     }
 
     Ok(())
@@ -48,10 +45,9 @@ pub fn deploy_one(cfg: &ContractsConfig, root: &Path, name: &str) -> Result<Stri
         );
     }
 
-    build::run(root)?;
-
+    let directory = release::fetch(root)?;
     let deployer = deploy_all::deployer_address(cfg)?;
-    let wasm = wasm_path(root, name);
+    let wasm = wasm_path(&directory, name);
 
     let ctor: Vec<String> = match name {
         "stellar_ibc_router" => vec!["--owner".into(), deployer],

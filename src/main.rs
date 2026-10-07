@@ -96,18 +96,7 @@ async fn main() -> Result<()> {
         Command::Build(args) => build::run(root, args)?,
         Command::Up(args) => stack::up(root, args.cosmos, args.stellar)?,
         Command::Down(args) => stack::down(root, args.volumes)?,
-        Command::Start(args) => {
-            start::run(
-                &cfg,
-                root,
-                &http,
-                args.skip_images,
-                args.skip_accounts,
-                args.skip_relayer,
-                args.deploy_contracts,
-            )
-            .await?
-        }
+        Command::Start(args) => start::run(&cfg, root, &http, &args).await?,
 
         Command::Tx { cmd } => tx::run(&cfg, root, &http, cmd).await?,
 

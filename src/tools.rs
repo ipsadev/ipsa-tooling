@@ -22,6 +22,10 @@ pub mod stellar {
     pub fn capture_all(root: &Path, args: &[&str]) -> Result<String> {
         run::capture_all(root, "stellar", args)
     }
+
+    pub fn capture_with_input(root: &Path, args: &[&str], input: &str) -> Result<String> {
+        run::capture_with_input(root, "stellar", args, input)
+    }
 }
 
 pub mod gaiad {
@@ -37,6 +41,14 @@ pub mod gaiad {
 
     pub fn piped(root: &Path, args: &[&str], input: &str) -> Result<()> {
         run::piped(root, "gaiad", args, input)
+    }
+}
+
+pub mod gh {
+    use super::*;
+
+    pub fn command(root: &Path, args: &[&str]) -> Result<()> {
+        run::command(root, "gh", args)
     }
 }
 

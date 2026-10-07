@@ -6,7 +6,10 @@ use crate::tx::contracts;
 
 #[derive(clap::Args)]
 pub struct BuildArgs {
-    #[arg(long, help = "Build the Soroban contracts (the default)")]
+    #[arg(
+        long,
+        help = "Fetch and verify the released Soroban contracts (the default)"
+    )]
     pub soroban: bool,
     #[arg(long, help = "Build the CosmWasm light-client wasm")]
     pub cosmos: bool,
@@ -18,7 +21,7 @@ pub fn run(root: &Path, args: BuildArgs) -> Result<()> {
     }
 
     if args.soroban || !args.cosmos {
-        contracts::build::run(root)?;
+        contracts::release::fetch(root)?;
     }
 
     Ok(())

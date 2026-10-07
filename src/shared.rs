@@ -4,10 +4,11 @@ use anyhow::{Context, Result};
 
 use crate::logger;
 
-#[derive(Clone, Copy, clap::ValueEnum)]
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Chain {
     Stellar,
     Cosmos,
+    Evm,
     Cardano,
     All,
 }
@@ -17,6 +18,7 @@ impl Chain {
         match self {
             Self::Stellar => "stellar",
             Self::Cosmos => "cosmos",
+            Self::Evm => "evm",
             Self::Cardano => "cardano",
             Self::All => "all",
         }
@@ -28,6 +30,16 @@ pub fn chain_of(address: &str) -> Option<Chain> {
 
     if addr.starts_with("cosmos1") {
         return Some(Chain::Cosmos);
+    }
+
+    let is_evm = addr.len() == 42
+        && addr.starts_with("0x")
+        && addr[2..]
+            .chars()
+            .all(|character| character.is_ascii_hexdigit());
+
+    if is_evm {
+        return Some(Chain::Evm);
     }
 
     let is_stellar = addr.len() == 56
@@ -164,6 +176,11 @@ pub struct StartArgs {
     pub skip_accounts: bool,
     #[arg(long, help = "Skip starting postgres + the ibcv2 relayer")]
     pub skip_relayer: bool,
+    #[arg(
+        long,
+        help = "Skip storing the light-client wasm, creating the clients and registering counterparties"
+    )]
+    pub skip_clients: bool,
     #[arg(
         long,
         help = "Redeploy contracts even if ROUTER_CONTRACT_ADDRESS is already set"

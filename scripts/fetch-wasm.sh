@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${1:-$ROOT/dist}"
 
 REPO="${LIGHT_CLIENT_REPO:-ipsadev/stellar-light-client}"
-TAG="${LIGHT_CLIENT_VERSION:-v0.1.0}"
+TAG="${2:-${LIGHT_CLIENT_VERSION:-v0.1.0}}"
 ARTIFACT="stellar_light_client.wasm"
 
 if ! command -v gh >/dev/null 2>&1; then

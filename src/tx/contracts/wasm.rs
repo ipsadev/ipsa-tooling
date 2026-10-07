@@ -1,4 +1,7 @@
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use anyhow::{bail, Context, Result};
 use base64::Engine;
@@ -22,6 +25,7 @@ const FUND_GAS_LIMIT: u64 = 200_000;
 const FUND_FEE_AMOUNT: u64 = 10_000;
 
 const RELEASE_TAG: &str = "v0.1.1";
+const FETCH_SCRIPT: &str = include_str!("../../../scripts/fetch-wasm.sh");
 const GOV_AUTHORITY: &str = "cosmos10d07y265gmmuvt4z0w9aw880jnsr700j6zn9kn";
 const TESTNET_DEPOSIT_UATOM: u64 = 50_000_000;
 
@@ -125,18 +129,20 @@ pub fn build(root: &Path) -> Result<()> {
 }
 
 fn build_wasm(root: &Path) -> Result<(Vec<u8>, String)> {
-    let script = root.join("scripts/fetch-wasm.sh");
-    if !script.exists() {
-        bail!("missing {}", script.display());
-    }
+    let local = crate::config::get("LIGHT_CLIENT_WASM_DIR", "");
 
-    let dist = root.join("dist");
-    logger::step("scripts/fetch-wasm.sh (released light client, checksum verified)");
-    run::command(
-        root,
-        script.display().to_string().as_str(),
-        &[dist.display().to_string().as_str()],
-    )?;
+    let dist = if local.trim().is_empty() {
+        fetch_release(root)?
+    } else {
+        logger::step(&format!(
+            "light client from LIGHT_CLIENT_WASM_DIR={}",
+            local.trim()
+        ));
+
+        PathBuf::from(local.trim())
+    };
+
+    verify_checksums(&dist)?;
 
     let wasm_file = dist.join("stellar_light_client.wasm");
     let gz_file = dist.join("stellar_light_client.wasm.gz");
@@ -159,6 +165,55 @@ fn build_wasm(root: &Path) -> Result<(Vec<u8>, String)> {
     ));
 
     Ok((gz, sha))
+}
+
+fn fetch_release(root: &Path) -> Result<PathBuf> {
+    let dist = root.join("dist");
+    let dist_text = dist.display().to_string();
+
+    logger::step(&format!(
+        "fetch-wasm ({CRATE} {RELEASE_TAG} release, checksum verified)"
+    ));
+
+    run::command(
+        root,
+        "bash",
+        &[
+            "-c",
+            FETCH_SCRIPT,
+            "fetch-wasm",
+            dist_text.as_str(),
+            RELEASE_TAG,
+        ],
+    )?;
+
+    Ok(dist)
+}
+
+fn verify_checksums(dist: &Path) -> Result<()> {
+    let listing = dist.join("checksums.txt");
+    let checksums = std::fs::read_to_string(&listing)
+        .with_context(|| format!("reading {}", listing.display()))?;
+
+    for line in checksums.lines().filter(|line| !line.trim().is_empty()) {
+        let Some((expected, name)) = line.split_once(char::is_whitespace) else {
+            bail!("{} has a malformed line: {line}", listing.display());
+        };
+
+        let file = dist.join(name.trim().trim_start_matches('*'));
+        let bytes = std::fs::read(&file).with_context(|| format!("reading {}", file.display()))?;
+        let actual = hex::encode(Sha256::digest(&bytes));
+
+        if actual != expected {
+            bail!(
+                "{} does not match {}: expected {expected}, got {actual}",
+                file.display(),
+                listing.display()
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn proposal_summary(checksum: &str) -> String {

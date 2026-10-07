@@ -9,6 +9,7 @@ use crate::{
 
 pub mod clients;
 pub mod contracts;
+pub mod evm;
 pub mod gmp;
 pub mod query;
 pub mod relay;
@@ -40,7 +41,7 @@ pub enum TxCmd {
         cmd: gmp::GmpTx,
     },
     #[command(
-        about = "Hand a source tx to the relayer (stellar → cosmos or cosmos → stellar) and follow its packets"
+        about = "Hand a source tx to the relayer (stellar ↔ cosmos or stellar ↔ evm) and follow its packets"
     )]
     Relay(RelayArgs),
     #[command(about = "Start a query transaction")]
@@ -59,6 +60,11 @@ pub enum ClientsTx {
 
 #[derive(clap::Args)]
 pub struct SideArgs {
+    #[arg(
+        long,
+        help = "Act on the Stellar ↔ EVM zk corridor instead (create: both light clients; counterparty: the Stellar side)"
+    )]
+    pub evm: bool,
     #[arg(long, help = "Act on the Cosmos side")]
     pub cosmos: bool,
     #[arg(long, help = "Act on the Stellar side")]
@@ -193,6 +199,12 @@ async fn clients_tx(
 ) -> Result<()> {
     let cc = ClientsConfig::from(cfg);
 
+    match &cmd {
+        ClientsTx::Create(args) if args.evm => return evm::clients::create(cfg, root).await,
+        ClientsTx::Counterparty(args) if args.evm => return evm::clients::counterparty(cfg, root),
+        _ => {}
+    }
+
     match cmd {
         ClientsTx::Create(args) => match sides(args.cosmos, args.stellar) {
             Sides::Cosmos => clients::cosmos::run(cfg, &cc, root, http, args.force)
@@ -284,10 +296,12 @@ async fn transfer_tx(
     };
 
     let hash = match (from, to) {
+        (Chain::Stellar, Chain::Evm) => evm::transfer::stellar_to_evm(cfg, root, &params)?,
+        (Chain::Evm, Chain::Stellar) => evm::transfer::evm_to_stellar(cfg, &params).await?,
         (Chain::Stellar, Chain::Cosmos) => transfer::stellar_to_cosmos(cfg, root, &params)?,
         (Chain::Cosmos, Chain::Stellar) => transfer::cosmos_to_stellar(cfg, root, &params)?,
         _ => bail!(
-            "transfer must cross chains (stellar↔cosmos): got {} → {}",
+            "transfer must cross chains (stellar↔cosmos or stellar↔evm): got {} → {}",
             from.as_str(),
             to.as_str()
         ),
@@ -301,7 +315,16 @@ async fn transfer_tx(
         bail!("--relay was given but no transaction hash was reported — relay it by hand once you have the hash");
     };
 
-    relay::after_transfer(cfg, http, from, &hash, wait, strict, relay_timeout_secs).await
+    relay::after_transfer(
+        cfg,
+        http,
+        (from, to),
+        &hash,
+        wait,
+        strict,
+        relay_timeout_secs,
+    )
+    .await
 }
 
 async fn query_tx(

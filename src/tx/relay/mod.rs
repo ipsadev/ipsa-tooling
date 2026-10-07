@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Result};
 use serde_json::Value;
 
-use crate::{config::Config, logger, shared::Chain};
+use crate::{config::Config, logger, shared::Chain, tx::evm::config::EvmCorridorConfig};
 
 mod budget;
 mod config;
@@ -28,6 +28,16 @@ pub struct RelayArgs {
         help = "The tx is on Cosmos — relay Cosmos → Stellar (inferred from the hash when omitted)"
     )]
     pub cosmos: bool,
+    #[arg(
+        long,
+        help = "The tx is on Stellar and belongs to the Stellar ↔ EVM corridor — relay Stellar → EVM (an 0x hash is always EVM → Stellar)"
+    )]
+    pub evm: bool,
+    #[arg(
+        long,
+        help = "Stellar ↔ EVM only: prove and submit through the proof API from here instead of handing the tx to the relayer"
+    )]
+    pub direct: bool,
     #[arg(
         long,
         value_name = "ID",
@@ -61,17 +71,14 @@ pub struct RelayArgs {
 
 struct Source {
     chain: Chain,
+    destination: Chain,
     id: String,
     inferred: bool,
 }
 
 impl Source {
-    fn direction(&self) -> &'static str {
-        match self.chain {
-            Chain::Stellar => "stellar → cosmos",
-            Chain::Cosmos => "cosmos → stellar",
-            _ => "unknown direction",
-        }
+    fn direction(&self) -> String {
+        format!("{} → {}", self.chain.as_str(), self.destination.as_str())
     }
 }
 
@@ -102,23 +109,48 @@ pub async fn run(cfg: &Config, http: &reqwest::Client, args: RelayArgs) -> Resul
         bail!("--tx is required — pass the hash of the transfer transaction");
     }
 
+    if args.direct {
+        return direct(cfg, &tx, args.evm).await;
+    }
+
     let source = source_chain(cfg, &args, &tx)?;
 
     relay(cfg, http, &tx, &source, &Opts::from(&args)).await
 }
 
+async fn direct(cfg: &Config, tx: &str, evm: bool) -> Result<()> {
+    if tx.starts_with("0x") {
+        let root = crate::repo::find_root()?;
+
+        return crate::tx::evm::relay::evm_to_stellar(cfg, &root, tx)
+            .await
+            .map(|_| ());
+    }
+
+    if evm {
+        return crate::tx::evm::relay::stellar_to_evm(cfg, tx)
+            .await
+            .map(|_| ());
+    }
+
+    bail!("--direct applies to the Stellar ↔ EVM corridor only — pass --evm or an 0x hash");
+}
+
 pub async fn after_transfer(
     cfg: &Config,
     http: &reqwest::Client,
-    chain: Chain,
+    route: (Chain, Chain),
     tx: &str,
     wait: bool,
     strict: bool,
     timeout_secs: Option<u64>,
 ) -> Result<()> {
+    let (chain, destination) = route;
+
     let source = Source {
-        id: chain_id(cfg, chain),
+        id: chain_id(cfg, chain, destination),
         chain,
+        destination,
         inferred: false,
     };
 
@@ -157,7 +189,14 @@ async fn relay(
     }
 
     if opts.wait {
-        let budget = budget::derive(&rc, http, source.chain, opts.timeout_secs).await;
+        let budget = budget::derive(
+            &rc,
+            http,
+            source.chain,
+            source.destination,
+            opts.timeout_secs,
+        )
+        .await;
         budget::announce(&budget);
 
         return wait_for_packets(&rc, http, tx, source, opts, &budget).await;
@@ -453,24 +492,35 @@ fn render(packets: &[Packet]) -> String {
 }
 
 fn source_chain(cfg: &Config, args: &RelayArgs, tx: &str) -> Result<Source> {
-    let inferred = !args.cosmos && !args.stellar;
+    let (chain, destination, inferred) = if tx.starts_with("0x") {
+        (Chain::Evm, Chain::Stellar, false)
+    } else if args.evm {
+        (Chain::Stellar, Chain::Evm, false)
+    } else {
+        let chain = match (args.cosmos, args.stellar) {
+            (true, true) => bail!("pass either --cosmos or --stellar, not both"),
+            (true, false) => Some(Chain::Cosmos),
+            (false, true) => Some(Chain::Stellar),
+            _ => infer_chain(tx),
+        };
 
-    let chain = match (args.cosmos, args.stellar) {
-        (true, true) => bail!("pass either --cosmos or --stellar, not both"),
-        (true, false) => Some(Chain::Cosmos),
-        (false, true) => Some(Chain::Stellar),
-        _ => infer_chain(tx),
-    };
+        let Some(chain) = chain else {
+            bail!(
+                "could not tell which chain {tx} is on — pass --stellar (relay to cosmos) or --cosmos (relay to stellar)"
+            );
+        };
 
-    let Some(chain) = chain else {
-        bail!(
-            "could not tell which chain {tx} is on — pass --stellar (relay to cosmos) or --cosmos (relay to stellar)"
-        );
+        let destination = match chain {
+            Chain::Cosmos => Chain::Stellar,
+            _ => Chain::Cosmos,
+        };
+
+        (chain, destination, !args.cosmos && !args.stellar)
     };
 
     let id = match &args.chain_id {
         Some(id) => id.trim().to_string(),
-        None => chain_id(cfg, chain),
+        None => chain_id(cfg, chain, destination),
     };
 
     if id.is_empty() {
@@ -479,14 +529,17 @@ fn source_chain(cfg: &Config, args: &RelayArgs, tx: &str) -> Result<Source> {
 
     Ok(Source {
         chain,
+        destination,
         id,
         inferred,
     })
 }
 
-fn chain_id(cfg: &Config, chain: Chain) -> String {
-    match chain {
-        Chain::Cosmos => cfg.cosmos.chain_id.as_str().to_string(),
+fn chain_id(cfg: &Config, chain: Chain, destination: Chain) -> String {
+    match (chain, destination) {
+        (Chain::Evm, _) => EvmCorridorConfig::from_env().evm_chain_id,
+        (Chain::Stellar, Chain::Evm) => EvmCorridorConfig::from_env().stellar_chain_id,
+        (Chain::Cosmos, _) => cfg.cosmos.chain_id.as_str().to_string(),
         _ => cfg.stellar.chain_id.as_str().to_string(),
     }
 }
@@ -510,7 +563,7 @@ fn infer_chain(tx: &str) -> Option<Chain> {
 
 fn unreachable_api(rc: &RelayConfig, error: reqwest::Error) -> anyhow::Error {
     anyhow::anyhow!(
-        "could not reach stellar-api at {} ({error}) — start it with `ipsa up`",
+        "could not reach ipsa-api at {} ({error}) — start it with `ipsa up`",
         rc.api_url
     )
 }

@@ -72,6 +72,10 @@ fn with_route(
 
     let chain_end = block_end(&lines, chain);
 
+    if let Some(empty) = empty_table(&lines, chain + 1, chain_end, "counterparty_chains") {
+        lines[empty] = format!("{}counterparty_chains:", " ".repeat(indent(&lines[empty])));
+    }
+
     let table =
         block_key(&lines, chain + 1, chain_end, "counterparty_chains").ok_or_else(|| {
             anyhow!(
@@ -103,6 +107,18 @@ fn block_key(lines: &[String], from: usize, to: usize, key: &str) -> Option<usiz
     let needle = format!("{key}:");
 
     (from..to).find(|&i| lines[i].trim() == needle && !lines[i].trim_start().starts_with('#'))
+}
+
+fn empty_table(lines: &[String], from: usize, to: usize, key: &str) -> Option<usize> {
+    let needle = format!("{key}:");
+
+    (from..to).find(|&i| {
+        let trimmed = lines[i].trim();
+
+        trimmed.starts_with(&needle)
+            && trimmed[needle.len()..].trim() == "{}"
+            && !trimmed.starts_with('#')
+    })
 }
 
 fn block_end(lines: &[String], start: usize) -> usize {
@@ -188,6 +204,18 @@ mod tests {
     #[test]
     fn an_unknown_chain_is_an_error_not_a_silent_no_op() {
         assert!(with_route(CONFIG, "osmosis-1", "08-wasm-1", "stellar-testnet").is_err());
+    }
+
+    #[test]
+    fn an_empty_inline_table_is_expanded_to_hold_the_route() {
+        let config = "chains:\n  simd-1:\n    ibcv2:\n      counterparty_chains: {}\n";
+
+        let out = with_route(config, "simd-1", "08-wasm-0", "stellar-testnet").unwrap();
+
+        assert_eq!(
+            out,
+            "chains:\n  simd-1:\n    ibcv2:\n      counterparty_chains:\n        08-wasm-0: 'stellar-testnet'\n"
+        );
     }
 
     #[test]
