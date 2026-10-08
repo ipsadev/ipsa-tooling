@@ -4,9 +4,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${1:-$ROOT/dist}"
 
-REPO="${LIGHT_CLIENT_REPO:-ipsadev/stellar-light-client}"
-TAG="${2:-${LIGHT_CLIENT_VERSION:-v0.1.0}}"
+TAG="${2:-${LIGHT_CLIENT_VERSION:-}}"
+REPO="${3:-${LIGHT_CLIENT_REPOSITORY:-}}"
 ARTIFACT="stellar_light_client.wasm"
+
+if [ -z "$REPO" ] || [ -z "$TAG" ]; then
+  echo "error: set LIGHT_CLIENT_REPOSITORY (owner/name) and LIGHT_CLIENT_VERSION (a release tag)," >&2
+  echo "       or pass them: fetch-wasm.sh <out-dir> <tag> <owner/name>." >&2
+  exit 1
+fi
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "error: gh not found. The light client is released from $REPO;" >&2

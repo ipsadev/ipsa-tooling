@@ -4,3 +4,8 @@ target
 .DS_Store
 .env
 .env.*
+!.env.example
+/stack/relayer.yml
+/stack/relayer-keys.json
+/stack/dist/
+/stack/provider-store-code*.json

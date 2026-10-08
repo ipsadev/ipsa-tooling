@@ -9,8 +9,6 @@ pub struct StellarConfig {
     pub key_name: String,
     pub gateway_url: String,
     pub api_url: String,
-    pub ibc_router: String,
-    pub transfer_app: String,
     pub pinned_quorum_set_hashes: Vec<String>,
 }
 
@@ -30,8 +28,6 @@ impl StellarConfig {
             key_name: get("STELLAR_KEY_NAME", "stellar-relayer"),
             gateway_url: get("STELLAR_GATEWAY_URL", &format!("127.0.0.1:{grpc_port}")),
             api_url: get("STELLAR_API_URL", &format!("http://127.0.0.1:{api_port}")),
-            ibc_router: get("STELLAR_ROUTER_CONTRACT", ""),
-            transfer_app: get("STELLAR_TRANSFER_CONTRACT", ""),
             pinned_quorum_set_hashes: split_list(&get("PINNED_QUORUM_SET_HASHES", "")),
         }
     }

@@ -210,12 +210,12 @@ async fn clients_tx(
             Sides::Cosmos => clients::cosmos::run(cfg, &cc, root, http, args.force)
                 .await
                 .map(|_| ()),
-            Sides::Stellar => clients::stellar::run(cfg, &cc, root, http, args.force)
+            Sides::Stellar => clients::stellar::run(cfg, &cc, http, args.force)
                 .await
                 .map(|_| ()),
             Sides::Both => {
                 clients::cosmos::run(cfg, &cc, root, http, args.force).await?;
-                clients::stellar::run(cfg, &cc, root, http, args.force).await?;
+                clients::stellar::run(cfg, &cc, http, args.force).await?;
 
                 Ok(())
             }
@@ -261,7 +261,7 @@ async fn contracts_tx(
         }
         ContractsTx::RegisterAssets => {
             if cfg.deployment.transfer_app.is_empty() {
-                bail!("TRANSFER_CONTRACT_ADDRESS is not set in .env — deploy with contracts-cd in ipsa-contracts, then set the address it reports");
+                bail!("TRANSFER_CONTRACT_ADDRESS is not set in .env — deploy the contracts with `ipsa tx contracts deploy --stellar`, which writes it");
             }
 
             transfer::assets::register_all(&cc, root, &cfg.deployment.transfer_app)

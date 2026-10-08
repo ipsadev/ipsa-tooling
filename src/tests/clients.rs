@@ -8,7 +8,7 @@ pub async fn run(cfg: &Config, root: &Path, http: &reqwest::Client) -> Result<()
     let cc = ClientsConfig::from(cfg);
 
     let cosmos_client = crate::tx::clients::cosmos::run(cfg, &cc, root, http, true).await?;
-    let stellar_client = crate::tx::clients::stellar::run(cfg, &cc, root, http, true).await?;
+    let stellar_client = crate::tx::clients::stellar::run(cfg, &cc, http, true).await?;
 
     expect_prefix(&cosmos_client, "07-tendermint")?;
     expect_prefix(&stellar_client, "08-wasm")?;

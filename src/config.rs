@@ -1,4 +1,9 @@
-use std::{env, path::Path};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
+
+use anyhow::{bail, Result};
 
 use crate::services::{
     cosmos::config::CosmosConfig, gateway::config::GatewayConfig, relayer::config::RelayerConfig,
@@ -150,9 +155,27 @@ pub fn get(key: &str, default: &str) -> String {
     }
 }
 
+pub fn required(key: &str) -> Result<String> {
+    let value = get(key, "");
+
+    if value.is_empty() {
+        bail!("{key} is not set — add it to {}", tooling_env().display());
+    }
+
+    Ok(value)
+}
+
+pub fn tooling_env() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(".env")
+}
+
+pub fn load_tooling_env() {
+    let _ = dotenvy::from_path_override(tooling_env());
+}
+
 impl Config {
     pub fn load(root: &Path) -> Self {
-        let _ = dotenvy::from_path_override(root.join(".env"));
+        load_tooling_env();
 
         Self {
             cosmos: CosmosConfig::devnet(),
@@ -160,7 +183,7 @@ impl Config {
             relayer: RelayerConfig::from_env(root),
             verifier: crate::services::verifier::VerifierConfig::from_env(),
             api: ImageRef {
-                image: get("API_IMAGE", "amandagonsalvesx/ipsa-api"),
+                image: get("API_IMAGE", ""),
                 tag: get("API_TAG", "latest"),
                 registry: get("API_REGISTRY", ""),
             },

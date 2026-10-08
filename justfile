@@ -20,11 +20,11 @@ lint:
 test:
     cargo test --locked
 
-# proto/ is copied from ipsa-backend; run locally to prove it has not drifted
-protos backend="../ipsa-backend":
-    diff -u {{backend}}/crates/gateway/proto/stellar_gateway.proto proto/stellar_gateway.proto
-    diff -u {{backend}}/crates/gateway/proto/proofapi.proto proto/proofapi.proto
-    @echo "protos match {{backend}}"
+# proto/ is copied from the gateway; pass the stack checkout to prove it has not drifted
+protos stack:
+    diff -u {{stack}}/crates/gateway/proto/stellar_gateway.proto proto/stellar_gateway.proto
+    diff -u {{stack}}/crates/gateway/proto/proofapi.proto proto/proofapi.proto
+    @echo "protos match {{stack}}"
 
 audit:
     cargo audit --file Cargo.lock

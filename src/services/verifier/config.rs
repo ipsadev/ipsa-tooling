@@ -12,7 +12,7 @@ impl VerifierConfig {
 
         Self {
             image: ImageRef {
-                image: get("VERIFIER_IMAGE", "amandagonsalvesx/ipsa-scp-verifier"),
+                image: get("VERIFIER_IMAGE", ""),
                 tag: get("VERIFIER_TAG", "latest"),
                 registry: get("VERIFIER_REGISTRY", ""),
             },

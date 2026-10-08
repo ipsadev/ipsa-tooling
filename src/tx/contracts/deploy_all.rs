@@ -91,7 +91,7 @@ pub fn run(
         cfg,
         root,
         &wasm("stellar_tendermint_light_client.wasm"),
-        &[],
+        &["--router", &router],
     )?;
     logger::ok(&format!("tendermint LC: {tendermint_id}"));
 
@@ -197,15 +197,16 @@ pub fn run(
     let addresses = [
         ("ROUTER_CONTRACT_ADDRESS", router.as_str()),
         ("TRANSFER_CONTRACT_ADDRESS", transfer.as_str()),
+        ("DEPLOYER_ADDRESS", deployer.as_str()),
+        ("ROUTER_GENESIS_LEDGER", genesis.as_str()),
         ("GMP_CONTRACT_ADDRESS", gmp.as_str()),
         ("MOCK_LC_CONTRACT_ID", mock_id.as_str()),
         ("ATTESTATION_LC_CONTRACT_ID", attestation_id.as_str()),
         ("TENDERMINT_LC_CONTRACT_ID", tendermint_id.as_str()),
-        ("DEPLOYER_ADDRESS", deployer.as_str()),
-        ("ROUTER_GENESIS_LEDGER", genesis.as_str()),
     ];
 
-    let env = root.join(".env");
+    let env = crate::config::tooling_env();
+
     logger::step(&format!("writing deployed addresses to {}", env.display()));
     crate::shared::env_upsert(&env, &addresses)?;
 
@@ -243,7 +244,7 @@ fn wire_relayer(cfg: &ContractsConfig, router: &str, transfer: &str) {
             Ok(true) => logger::detail(&format!("{}: {key} = {value}", path.display())),
             Ok(false) => logger::detail(&format!("{} already had {key}", path.display())),
             Err(error) => logger::warn(&format!(
-                "could not set {key} in {}: {error:#} — the ibc-relayer will read no packets from \
+                "could not set {key} in {}: {error:#} — the relayer will read no packets from \
                  the router until it matches",
                 path.display()
             )),

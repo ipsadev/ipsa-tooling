@@ -8,7 +8,7 @@ use crate::{
     logger,
 };
 
-pub fn import(cfg: &Config, root: &Path) -> Result<()> {
+pub fn import(cfg: &Config) -> Result<()> {
     logger::banner("relayer keys-import (chain id -> private key)");
 
     let mut keys = Map::new();
@@ -40,12 +40,24 @@ pub fn import(cfg: &Config, root: &Path) -> Result<()> {
         logger::ok(&format!("{stellar_chain}: signing key written"));
     }
 
+    let evm_chain = cfg.evm.evm_chain_id.as_str();
+    let evm_key = get("EVM_RELAYER_PRIVATE_KEY", "");
+
+    if evm_key.is_empty() {
+        logger::warn(&format!(
+            "EVM_RELAYER_PRIVATE_KEY unset — skipping {evm_chain}; the relayer refuses to start while relayer.yml lists that chain"
+        ));
+    } else {
+        keys.insert(evm_chain.to_string(), json!({ "private_key": evm_key }));
+        logger::ok(&format!("{evm_chain}: relayer key written"));
+    }
+
     if !cosmos_key.is_empty() {
         match crate::services::cosmos::tx::address_from_key(&cosmos_key, &cfg.cosmos.account_prefix)
         {
             Ok(address) => {
                 crate::shared::env_upsert(
-                    &root.join(".env"),
+                    &crate::config::tooling_env(),
                     &[("COSMOS_RELAYER_ADDRESS", address.as_str())],
                 )?;
                 logger::ok(&format!("COSMOS_RELAYER_ADDRESS={address}"));

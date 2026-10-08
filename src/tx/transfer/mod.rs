@@ -78,7 +78,7 @@ pub fn stellar_to_cosmos(
     let timeout = transfer_timeout(args.timeout_secs)?.to_string();
     let memo_json = format!("\"{}\"", args.memo);
 
-    let entry = assets::find(root, &args.denom)?.ok_or_else(|| {
+    let entry = assets::find(&args.denom)?.ok_or_else(|| {
         anyhow!(
             "denom '{}' is not registered — add it to ipsa/config/assets.json and run `ipsa tx contracts deploy --force` to register it",
             args.denom

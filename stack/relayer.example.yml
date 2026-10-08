@@ -1,0 +1,93 @@
+# relayer config for the stack's `ibcv2` profile. `ipsa` copies this to
+# relayer.yml on first use, then writes the contract ids and client routes into
+# the copy. Hostnames are compose service names, not localhost.
+
+postgres:
+  hostname: 'postgres'
+  port: '5432'
+  database: 'relayer'
+
+metrics:
+  prometheus_address: '0.0.0.0:48001'
+
+relayer_api:
+  address: '0.0.0.0:9001'
+
+# stellar-proof-api (ibc-contracts/programs/stellar-proof-api) runs on the
+# host: it proves the Sepolia corridor itself and forwards the simd-1 pairs to
+# ipsa-gateway. Proofs take minutes, hence the per-call timeout.
+ibcv2_proof_api:
+  grpc_address: 'host.docker.internal:3100'
+  grpc_tls_enabled: false
+  timeout: 45m
+
+signing:
+  keys_path: '/config/keys.json'
+
+chains:
+  simd-1:
+    chain_name: 'simd'
+    chain_id: 'simd-1'
+    type: 'cosmos'
+    environment: 'testnet'
+    gas_token_symbol: 'STAKE'
+    gas_token_decimals: 6
+    cosmos:
+      rpc: 'http://cosmos:26657'
+      grpc: 'cosmos:9090'
+      grpc_tls_enabled: false
+      address_prefix: 'cosmos'
+      ibcv2_tx_fee_denom: 'stake'
+      ibcv2_tx_fee_amount: 500000
+    ibcv2:
+      counterparty_chains: {}
+      should_relay_success_acks: true
+      should_relay_error_acks: true
+
+  stellar-testnet:
+    chain_name: 'stellar'
+    chain_id: 'stellar-testnet'
+    type: 'stellar'
+    environment: 'testnet'
+    gas_token_symbol: 'XLM'
+    gas_token_decimals: 7
+    stellar:
+      rpc: 'https://soroban-testnet.stellar.org'
+      gateway_grpc_address: 'ipsa-gateway:50052'
+      gateway_grpc_tls_enabled: false
+      network_passphrase: 'Test SDF Network ; September 2015'
+      router_contract_id: ''
+      transfer_contract_id: ''
+
+      pinned_quorum_set_hashes:
+        - '59d361aef699a1ca165dfcea7ebdedf8f9889c35cf76b35cfcb173cd72a2d669'
+    ibcv2:
+      counterparty_chains: {}
+      recv_batch_size: 1
+      recv_batch_concurrency: 1
+      ack_batch_size: 1
+      ack_batch_concurrency: 1
+      should_relay_success_acks: true
+      should_relay_error_acks: true
+
+  sepolia:
+    chain_name: 'sepolia'
+    chain_id: '11155111'
+    type: 'evm'
+    environment: 'testnet'
+    gas_token_symbol: 'ETH'
+    gas_token_decimals: 18
+    evm:
+      rpc: 'https://ethereum-sepolia-rpc.publicnode.com'
+      contracts:
+        ics_26_router_address: '0x3f09B9D0E8453C91FBA256F8e2A39A7200D7604B'
+        ics_20_transfer_address: '0x28b94Ea9eb1f91686AcEA5c46A1e9331E51CC7D4'
+      log_lookback_blocks: 5000
+    ibcv2:
+      counterparty_chains: {}
+      recv_batch_size: 1
+      recv_batch_concurrency: 1
+      ack_batch_size: 1
+      ack_batch_concurrency: 1
+      should_relay_success_acks: true
+      should_relay_error_acks: true

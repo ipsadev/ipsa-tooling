@@ -7,16 +7,19 @@ use crate::{logger, run};
 pub fn run(root: &Path) -> Result<()> {
     logger::banner("install — cargo install ipsa");
 
-    let crate_dir = root.join("cli");
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    logger::step("cargo install --path cli --force");
+    logger::step(&format!(
+        "cargo install --path {} --force",
+        crate_dir.display()
+    ));
     run::command(
         root,
         "cargo",
         &[
             "install",
             "--path",
-            crate_dir.to_str().unwrap_or("cli"),
+            crate_dir.to_str().unwrap_or("."),
             "--force",
         ],
     )?;

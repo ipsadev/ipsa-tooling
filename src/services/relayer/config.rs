@@ -18,11 +18,11 @@ impl RelayerConfig {
 
         Self {
             image: ImageRef {
-                image: get("RELAYER_IMAGE", "amandagonsalvesx/ipsa-relayer"),
+                image: get("RELAYER_IMAGE", ""),
                 tag: get("RELAYER_TAG", "latest"),
                 registry: get("RELAYER_REGISTRY", ""),
             },
-            context: get("RELAYER_CONTEXT", "../ibc-relayer"),
+            context: get("RELAYER_CONTEXT", ""),
             config: root.join("relayer.yml").display().to_string(),
             keys: root.join("relayer-keys.json").display().to_string(),
             api_addr: format!("127.0.0.1:{}", get("RELAYER_API_PORT", "9001")),

@@ -37,7 +37,7 @@ pub struct ServiceArgs {
     pub gateway: bool,
     #[arg(long, help = "Act on the cosmos service")]
     pub cosmos: bool,
-    #[arg(long, help = "Act on the ibc-relayer service (ibcv2 stack)")]
+    #[arg(long, help = "Act on the relayer service (ibcv2 stack)")]
     pub relayer: bool,
     #[arg(long, help = "Act on the postgres service (ibcv2 stack)")]
     pub postgres: bool,
@@ -75,26 +75,39 @@ impl Service {
     }
 
     fn buildable(self) -> bool {
-        !matches!(self, Self::Cosmos | Self::Postgres | Self::Watcher)
+        matches!(self, Self::Relayer | Self::Verifier)
     }
 
-    fn image(self, cfg: &Config) -> String {
-        match self {
-            Self::Api => cfg.api.reference(),
-            Self::Gateway => cfg.gateway.image.reference(),
-            Self::Relayer => cfg.relayer.image.reference(),
-            Self::Cosmos => get(
-                "COSMOS_CHAIN_IMAGE",
-                "ghcr.io/cosmos/ibc-go-wasm-simd:v11.0.0",
-            ),
-            Self::Postgres => get("POSTGRES_IMAGE", "postgres:18"),
-            Self::Watcher => format!(
-                "{}:{}",
-                get("WATCHER_IMAGE", "stellar/stellar-core"),
-                get("WATCHER_TAG", "latest")
-            ),
-            Self::Verifier => verifier::VerifierConfig::from_env().image.reference(),
+    fn image(self, cfg: &Config) -> Result<String> {
+        let (image, variable) = match self {
+            Self::Api => (&cfg.api, "API_IMAGE"),
+            Self::Gateway => (&cfg.gateway.image, "GATEWAY_IMAGE"),
+            Self::Relayer => (&cfg.relayer.image, "RELAYER_IMAGE"),
+            Self::Verifier => (&cfg.verifier.image, "VERIFIER_IMAGE"),
+            Self::Cosmos => {
+                return Ok(get(
+                    "COSMOS_CHAIN_IMAGE",
+                    "ghcr.io/cosmos/ibc-go-wasm-simd:v11.0.0",
+                ))
+            }
+            Self::Postgres => return Ok(get("POSTGRES_IMAGE", "postgres:18")),
+            Self::Watcher => {
+                return Ok(format!(
+                    "{}:{}",
+                    get("WATCHER_IMAGE", "stellar/stellar-core"),
+                    get("WATCHER_TAG", "latest")
+                ))
+            }
+        };
+
+        if image.image.is_empty() {
+            bail!(
+                "{variable} is not set — add the image name to {}",
+                crate::config::tooling_env().display()
+            );
         }
+
+        Ok(image.reference())
     }
 }
 
@@ -238,11 +251,9 @@ fn build_or_push(cfg: &Config, root: &Path, args: &ServiceArgs, push: bool) -> R
 fn build_one(cfg: &Config, root: &Path, service: Service, push: bool) -> Result<()> {
     let verb = if push { "push" } else { "build" };
     logger::banner(&format!("services {verb} {}", service.compose()));
-    logger::detail(&format!("image: {}", service.image(cfg)));
+    logger::detail(&format!("image: {}", service.image(cfg)?));
 
     let (dockerfile, context) = match service {
-        Service::Api => ("crates/api/Dockerfile".to_string(), ".".to_string()),
-        Service::Gateway => ("crates/gateway/Dockerfile".to_string(), ".".to_string()),
         Service::Relayer => {
             let repo = relayer_repo(cfg, root)?;
 
@@ -253,7 +264,11 @@ fn build_one(cfg: &Config, root: &Path, service: Service, push: bool) -> Result<
 
             (format!("{repo}/Dockerfile"), repo)
         }
-        Service::Cosmos | Service::Postgres | Service::Watcher => return Ok(()),
+        Service::Api
+        | Service::Gateway
+        | Service::Cosmos
+        | Service::Postgres
+        | Service::Watcher => return Ok(()),
     };
 
     build_image(cfg, root, service, &dockerfile, &context, push)
@@ -267,7 +282,7 @@ fn build_image(
     context: &str,
     push: bool,
 ) -> Result<()> {
-    let image = service.image(cfg);
+    let image = service.image(cfg)?;
 
     logger::step("docker build (host arch)");
     tools::docker::command(root, &["build", "-t", &image, "-f", dockerfile, context])?;
@@ -325,22 +340,29 @@ fn relayer_repo(cfg: &Config, root: &Path) -> Result<String> {
 
     checkout_repo(
         root,
-        "ibc-relayer",
+        "relayer",
         &relayer.repo_url,
         &relayer.branch,
-        "ibc-relayer",
+        "relayer",
     )
 }
 
 fn verifier_repo(cfg: &Config, root: &Path) -> Result<String> {
     let verifier = &cfg.verifier;
 
+    if verifier.repo_url.trim().is_empty() {
+        bail!(
+            "VERIFIER_REPO_URL is not set — add the verifier's git url to {} to build it",
+            crate::config::tooling_env().display()
+        );
+    }
+
     checkout_repo(
         root,
-        "scp-verifier",
+        "verifier",
         &verifier.repo_url,
         &verifier.branch,
-        "scp-verifier",
+        "verifier",
     )
 }
 

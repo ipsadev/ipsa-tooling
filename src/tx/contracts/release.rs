@@ -6,26 +6,25 @@ use std::{
 use anyhow::{bail, Context, Result};
 use sha2::{Digest, Sha256};
 
-use crate::{logger, tools};
+use crate::{config, logger, tools};
 
-const REPOSITORY: &str = "ipsadev/ipsa-contracts";
-const RELEASE_TAG: &str = "v0.1.0";
 const CHECKSUMS: &str = "SHA256SUMS";
 
 pub fn fetch(root: &Path) -> Result<PathBuf> {
-    let tag = RELEASE_TAG;
-    let directory = root.join("dist/contracts").join(tag);
+    let repository = config::required("CONTRACTS_REPOSITORY")?;
+    let tag = config::required("CONTRACTS_VERSION")?;
+    let directory = root.join("dist/contracts").join(&tag);
 
     if verify(&directory).is_ok() {
         logger::detail(&format!(
-            "{REPOSITORY}@{tag} already verified in {}",
+            "{repository}@{tag} already verified in {}",
             directory.display()
         ));
 
         return Ok(directory);
     }
 
-    logger::step(&format!("downloading {REPOSITORY}@{tag}"));
+    logger::step(&format!("downloading {repository}@{tag}"));
 
     std::fs::create_dir_all(&directory)
         .with_context(|| format!("creating {}", directory.display()))?;
@@ -37,9 +36,9 @@ pub fn fetch(root: &Path) -> Result<PathBuf> {
         &[
             "release",
             "download",
-            tag,
+            &tag,
             "--repo",
-            REPOSITORY,
+            &repository,
             "--pattern",
             "*.wasm",
             "--pattern",
@@ -49,12 +48,12 @@ pub fn fetch(root: &Path) -> Result<PathBuf> {
             "--clobber",
         ],
     )
-    .with_context(|| format!("downloading the {tag} release of {REPOSITORY}"))?;
+    .with_context(|| format!("downloading the {tag} release of {repository}"))?;
 
     verify(&directory)?;
 
     logger::ok(&format!(
-        "{REPOSITORY}@{tag} verified in {}",
+        "{repository}@{tag} verified in {}",
         directory.display()
     ));
 

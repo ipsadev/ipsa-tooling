@@ -6,25 +6,30 @@ deploys the Soroban contracts, uploads the light client, creates clients,
 registers counterparties, and reports status — driving **docker**, the
 **`stellar`** CLI, and **`ipsa-api`** directly. There are no shell scripts.
 
-It lives in its own repo. The stack it drives lives in `ipsa-backend`; point
-`STELLAR_IBC_ROOT` at that checkout, or run `ipsa` from inside it.
+It lives in its own repo and needs no other checkout. The stack it drives ships
+in [`stack/`](stack): the compose file, the simd devnet assets, the stellar-core
+watcher config and the relayer config template. The api, gateway and relayer run
+as published images; where the contracts and light-client releases, the images
+and the relayer and verifier sources live is read from `.env`, never built in.
 
 ## How it works
 
-- **Stack-root discovery** — reads `STELLAR_IBC_ROOT`, otherwise walks up from
-  the current directory for `docker-compose.yml`. All paths and `docker compose`
-  calls are resolved against that root, so the binary works from anywhere once
-  the variable is set.
-- **Config** — reads `.env` from the stack root (shell env wins, matching the
-  rest of the stack). See [Configuration](#configuration).
+- **The stack** — `stack/` beside this README, found from wherever `ipsa` runs
+  because the binary records the folder it was built from (`IPSA_STACK_DIR`
+  points it at a copy instead). All paths and `docker compose` calls resolve
+  against it, and the compose project is named `ipsa`. On first use `ipsa`
+  copies `stack/relayer.example.yml` to `stack/relayer.yml`, which it then edits
+  as it deploys contracts and creates clients; that copy, `relayer-keys.json`,
+  `dist/` and the store-code proposals stay untracked.
+- **Config** — one file, `.env` beside this README. `ipsa` loads it and every
+  `docker compose` it runs inherits it. See [Configuration](#configuration).
 - **Health probes** — native HTTP (counterparty REST, api `/health`) and TCP (gateway
   gRPC) checks; no external tools required for `check` / `status`.
-- **Contracts** — the Soroban wasm comes from a GitHub release of
-  [ipsa-contracts](https://github.com/ipsadev/ipsa-contracts), the tag pinned as
-  `RELEASE_TAG` in `src/tx/contracts/release.rs`. It is downloaded with `gh` into
+- **Contracts** — the Soroban wasm comes from the GitHub release named by
+  `CONTRACTS_REPOSITORY` (owner/name) and `CONTRACTS_VERSION` (the tag). It is downloaded with `gh` into
   `dist/contracts/<tag>/` and every file is checked against the release's
   `SHA256SUMS` before anything is uploaded or deployed; a verified copy is reused.
-  The repository is private, so `gh auth login` first. Nothing is built locally.
+  Run `gh auth login` first if the repository is private. Nothing is built locally.
   `tx contracts deploy --stellar` writes the addresses it deploys, and the
   router's genesis ledger, into `.env`. Commands that need an address fail with
   the variable name when it is missing.
@@ -34,7 +39,7 @@ It lives in its own repo. The stack it drives lives in `ipsa-backend`; point
 ## Install / run
 
 ```sh
-export STELLAR_IBC_ROOT=/path/to/ipsa-backend
+cp .env.example .env   # then fill it in
 
 # run in place (from this repo)
 cargo run -- <command>
@@ -241,7 +246,7 @@ are delivered the same way as on the Cosmos corridor — `ipsa` hands the source
 transaction to `ipsa-api`, and `ibc-relayer` asks the proof API for the
 transactions, submits them, and carries the acknowledgement back. The proof API is
 `stellar-proof-api` from the `ibc-contracts` fork; the relayer reaches it as its
-`ibcv2_proof_api` (see `ipsa-backend/relayer.yml`).
+`ibcv2_proof_api` (see `stack/relayer.example.yml`).
 
 ### `ipsa tx transfer --from G… --to 0x… --amount <n> [--denom XLM]`
 
@@ -331,7 +336,7 @@ under an old id.
 
 One Stellar router serves both corridors, so the Stellar side follows the stack's own
 `ROUTER_CONTRACT_ADDRESS`, `TRANSFER_CONTRACT_ADDRESS` and `STELLAR_CHAIN_ID` unless the
-`STELLAR_EVM_*` variables say otherwise. `.env.example` in `ipsa-backend` lists the EVM values
+`STELLAR_EVM_*` variables say otherwise. [`.env.example`](.env.example) lists the EVM values
 for the live Sepolia corridor.
 
 ---
@@ -386,7 +391,9 @@ ipsa services <pull|up|restart|down|build|push> [--api|--gateway|--cosmos]
 
 One namespace for the `api`, `gateway`, and `cosmos` services. A
 `--api` / `--gateway` / `--cosmos` flag selects the target;
-**omitting it acts on all**. Image tags resolve from `.env`.
+**omitting it acts on all**. Image tags resolve from `.env`. `build` and `push`
+apply to the relayer and verifier only: the api and gateway images are
+`ipsa-backend`'s releases, and the stack only pulls them.
 
 | Command | What it does |
 |---|---|
@@ -398,9 +405,11 @@ One namespace for the `api`, `gateway`, and `cosmos` services. A
 | `push` | `docker build` + `docker push` for the host arch |
 
 `build` / `push` cover the custom images only — `--cosmos` is an upstream image
-and is rejected for build/push. The **ibc-relayer** is built from a separate
-repo: the CLI clones `RELAYER_REPO_URL` into `target/ibc-relayer` (or updates
-it), checks out `RELAYER_BRANCH`, then builds from there.
+and is rejected for build/push. The **relayer** is built from a separate
+repo: the CLI clones `RELAYER_REPO_URL` into `target/relayer` (or updates
+it), checks out `RELAYER_BRANCH`, then builds from there; with no
+`RELAYER_REPO_URL` it builds the local checkout at `RELAYER_CONTEXT`. The
+**verifier** is cloned the same way from `VERIFIER_REPO_URL` into `target/verifier`.
 
 Both build for the **host architecture only** — multi-arch (amd64 + arm64)
 manifests are published by the CD workflows (`api-cd` / `gateway-cd`), which
@@ -446,11 +455,20 @@ ipsa down                            # stop the stack
 
 ## Configuration
 
-Read from `stellar-ibc/.env` (shell env overrides). Defaults shown.
+`ipsa` reads one file, `.env` beside this README, and values in it override the
+shell. It is found from wherever `ipsa` runs because the binary records the folder
+it was built from. It holds everything: release locations, test accounts, image
+build sources, the EVM corridor, and what the stack's services read — contract
+addresses, ports, chain and client ids, the images it runs. Every `docker compose`
+call inherits it. [`.env.example`](.env.example) lists all of it; copy it to `.env`.
+
+`ipsa` writes what it creates back to the same file: contract addresses, the
+router's genesis ledger, client ids, account keys and the stored light-client
+checksum. Defaults shown.
 
 | Variable | Default | Used by |
 |---|---|---|
-| `STELLAR_IBC_ROOT` | _(auto-discovered)_ | repo-root override |
+| `IPSA_STACK_DIR` | `stack/` beside this README | run a copy of the stack from elsewhere |
 | `COSMOS_CHAIN_ID` | `simd-1` | status, clients, keys |
 | `COSMOS_REST_URL` | `http://127.0.0.1:1317` | check/status/start probes |
 | `COSMOS_RPC_URL` | `http://127.0.0.1:26657` | clients (RPC probe) |
@@ -460,14 +478,19 @@ Read from `stellar-ibc/.env` (shell env overrides). Defaults shown.
 | `STELLAR_RPC_URL` | `https://soroban-testnet.stellar.org` | contracts (stellar CLI) |
 | `NETWORK_PASSPHRASE` | `Test SDF Network ; September 2015` | contracts (stellar CLI) |
 | `DEPLOYER_IDENTITY` | `admin` | contracts deploy/invoke `--source` |
+| `CONTRACTS_REPOSITORY` / `CONTRACTS_VERSION` | _(required to deploy)_ | the GitHub release (owner/name, tag) `tx contracts deploy --stellar` and `upload` download |
+| `LIGHT_CLIENT_REPOSITORY` / `LIGHT_CLIENT_VERSION` | _(required unless `LIGHT_CLIENT_WASM_DIR` is set)_ | the light-client release (owner/name, tag) `start` and `tx contracts deploy --cosmos` download and store on cosmos |
+| `LIGHT_CLIENT_WASM_DIR` | _(unset)_ | a local light-client build to store instead of downloading a release; must hold `stellar_light_client.wasm`, its `.gz` and `checksums.txt` |
 | `ROUTER_CONTRACT_ADDRESS` / `TRANSFER_CONTRACT_ADDRESS` / `DEPLOYER_ADDRESS` | _(set by deploy-all)_ | status, deploy-all idempotency |
 | `COSMOS_CLIENT_ID` / `STELLAR_CLIENT_ID` | _(set by clients cmds)_ | clients idempotency |
 | `TRANSFER_PORT` / `MOCK_CLIENT_TYPE` / `ATTESTATION_CLIENT_TYPE` / `TENDERMINT_CLIENT_TYPE` | `transfer` / `mock` / `attestation` / `07-tendermint` | router wiring |
-| `API_IMAGE` / `API_TAG` / `API_REGISTRY` | `amandagonsalvesx/stellar-eureka-api` / `latest` / _(none)_ | api image to pull/run |
-| `GATEWAY_IMAGE` / `GATEWAY_TAG` / `GATEWAY_REGISTRY` | `amandagonsalvesx/stellar-eureka-gateway` / `latest` / _(none)_ | gateway image to pull/run |
+| `API_IMAGE` / `API_TAG` / `API_REGISTRY` | _(required)_ / `latest` / _(none)_ | api image the stack pulls |
+| `GATEWAY_IMAGE` / `GATEWAY_TAG` / `GATEWAY_REGISTRY` | _(required)_ / `latest` / _(none)_ | gateway image the stack pulls |
+| `RELAYER_IMAGE` / `VERIFIER_IMAGE` | _(required to build)_ | relayer and verifier images to build/push |
+| `RELAYER_CONTEXT` | _(none)_ | a local relayer checkout to build when `RELAYER_REPO_URL` is unset |
 
 > `RELAYER_REPO_URL` / `RELAYER_BRANCH` locate the relayer source for
-> `services build/push --relayer` (cloned into `target/ibc-relayer`);
+> `services build/push --relayer` (cloned into `target/relayer`);
 > `DOCKER_USERNAME` / `DOCKER_TOKEN` authenticate the push.
 
 ---
@@ -504,14 +527,14 @@ ipsa/src/
     gateway/         gRPC query · config
   tests/             ICS integration flows (ipsa test)
 proto/               gateway + proof-api service definitions, copied from
-                     ipsa-backend; `just protos` proves they have not drifted
+                     the gateway; `just protos <stack>` proves they have not drifted
 scripts/             one-off operator scripts
 ```
 
 ## just
 
-`just ci` runs what CI runs: `fmt-check`, `lint`, `test`, `audit`. `just protos`
-diffs `proto/` against an `ipsa-backend` checkout.
+`just ci` runs what CI runs: `fmt-check`, `lint`, `test`, `audit`. `just protos <stack>`
+diffs `proto/` against a stack checkout.
 
 Image build + push is `ipsa services build` / `services push`, which resolve
 image refs from `.env` and clone the relayer source per `RELAYER_REPO_URL` /

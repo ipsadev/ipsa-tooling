@@ -36,7 +36,7 @@ pub async fn run(
     }
 
     if cfg.deployment.ibc_router.is_empty() {
-        bail!("ROUTER_CONTRACT_ADDRESS is not set in .env — deploy with contracts-cd in ipsa-contracts, then set the address it reports");
+        bail!("ROUTER_CONTRACT_ADDRESS is not set in .env — deploy the contracts with `ipsa tx contracts deploy --stellar`, which writes it");
     }
 
     logger::step("gateway CreateClient (cosmos → stellar)");
@@ -74,7 +74,6 @@ pub async fn run(
 
     super::record(
         cc,
-        root,
         &CreateSpec {
             host_chain: cfg.stellar.chain_id.as_str(),
             reference_chain: cfg.cosmos.chain_id.as_str(),

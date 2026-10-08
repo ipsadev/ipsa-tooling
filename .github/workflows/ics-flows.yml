@@ -23,7 +23,6 @@ jobs:
     environment: staging
     timeout-minutes: 60
     env:
-      STELLAR_IBC_ROOT: ${{ github.workspace }}/ipsa-backend
       STELLAR_SIGNING_KEY: ${{ secrets.STELLAR_SIGNING_KEY }}
       COSMOS_VALIDATOR_MNEMONIC: ${{ secrets.COSMOS_VALIDATOR_MNEMONIC }}
       COSMOS_RELAYER_MNEMONIC: ${{ secrets.COSMOS_RELAYER_MNEMONIC }}
@@ -34,13 +33,6 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v5
-
-      - name: checkout the stack
-        uses: actions/checkout@v5
-        with:
-          repository: ipsadev/ipsa-backend
-          path: ipsa-backend
-          token: ${{ secrets.BACKEND_READ_TOKEN || github.token }}
 
       - name: setup
         uses: ./.github/actions/setup-ipsa
@@ -73,10 +65,10 @@ jobs:
 
       - name: stack logs on failure
         if: failure()
-        working-directory: ipsa-backend
+        working-directory: stack
         run: |
-          docker compose --profile local --profile hermes ps -a || true
-          docker compose --profile local --profile hermes logs --no-color --tail 400 || true
+          docker compose --profile '*' ps -a || true
+          docker compose --profile '*' logs --no-color --tail 400 || true
 
       - name: tear down
         if: always()

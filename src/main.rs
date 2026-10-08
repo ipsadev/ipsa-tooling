@@ -71,7 +71,7 @@ enum Command {
         #[command(subcommand)]
         cmd: ServicesCmd,
     },
-    #[command(about = "Relayer (ibc-relayer): write the signing key file")]
+    #[command(about = "Relayer: write the signing key file")]
     Relayer {
         #[command(subcommand)]
         cmd: RelayerCmd,
@@ -83,6 +83,7 @@ enum Command {
 async fn main() -> Result<()> {
     logger::init();
     let cli = Cli::parse();
+    config::load_tooling_env();
     let root = repo::find_root()?;
     let root = root.as_path();
     let cfg = Config::load(root);
@@ -103,7 +104,7 @@ async fn main() -> Result<()> {
         Command::Services { cmd } => services::run(&cfg, root, cmd)?,
 
         Command::Relayer { cmd } => match cmd {
-            RelayerCmd::KeysImport => services::relayer::keys::import(&cfg, root)?,
+            RelayerCmd::KeysImport => services::relayer::keys::import(&cfg)?,
             RelayerCmd::Transfers { limit, status } => {
                 services::relayer::db::transfers(&cfg, &http, limit, status.as_deref()).await?
             }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{anyhow, bail, Result};
 use cosmrs::{proto::cosmos::tx::v1beta1::TxBody, Any};
@@ -20,7 +20,6 @@ const WAIT: Duration = Duration::from_secs(90);
 pub async fn run(
     cfg: &Config,
     cc: &ClientsConfig,
-    root: &Path,
     http: &reqwest::Client,
     force: bool,
 ) -> Result<String> {
@@ -90,7 +89,6 @@ pub async fn run(
 
     super::record(
         cc,
-        root,
         &CreateSpec {
             host_chain: cfg.cosmos.chain_id.as_str(),
             reference_chain: cfg.stellar.chain_id.as_str(),

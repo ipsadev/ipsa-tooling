@@ -1,0 +1,12 @@
+{
+  "chain_id": "simd-1",
+  "moniker": "val",
+  "gentx": {
+    "key": "val",
+    "amount": "100000000000stake"
+  },
+  "accounts": {
+    "val": "1000000000000stake",
+    "relayer": "1000000000000stake"
+  }
+}

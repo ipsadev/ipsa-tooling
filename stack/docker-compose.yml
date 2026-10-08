@@ -1,0 +1,209 @@
+name: ipsa
+
+services:
+  node:
+    profiles: [local-stellar]
+    image: stellar/quickstart:latest
+    platform: linux/amd64
+    command: --local --enable-soroban-rpc
+    ports:
+      - "8000:8000"
+      - "11625:11625"
+      - "11626:11626"
+    environment:
+      ENABLE_LOGS: "false"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  cosmos:
+    profiles: [local, cosmos]
+    image: ${COSMOS_CHAIN_IMAGE:-ghcr.io/cosmos/ibc-go-wasm-simd:v11.0.0}
+    user: "0:0"
+    entrypoint: ["sh", "/setup.sh"]
+    volumes:
+      - ./cosmos/setup.sh:/setup.sh:ro
+      - ./cosmos/default-config.json:/config/default-config.json:ro
+      - cosmos-home:/root/.simapp
+    environment:
+      COSMOS_CHAIN_ID: "${COSMOS_CHAIN_ID:-simd-1}"
+      COSMOS_VALIDATOR_MNEMONIC: "${COSMOS_VALIDATOR_MNEMONIC}"
+      COSMOS_RELAYER_MNEMONIC: "${COSMOS_RELAYER_MNEMONIC}"
+    ports:
+      - "26657:26657"
+      - "1317:1317"
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "simd status >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  ipsa-gateway:
+    image: ${GATEWAY_IMAGE}:${GATEWAY_TAG}
+    profiles: [local, staging, ibcv2]
+    restart: unless-stopped
+    depends_on:
+      ipsa-api:
+        condition: service_healthy
+        required: false
+    ports:
+      - "${STELLAR_GATEWAY_GRPC_PORT}:${STELLAR_GATEWAY_GRPC_PORT}"
+    environment:
+      RUST_LOG: "${IPSA_LOG_LEVEL:-info}"
+      STELLAR_GATEWAY_HOST: "0.0.0.0"
+      STELLAR_GATEWAY_GRPC_PORT: "${STELLAR_GATEWAY_GRPC_PORT}"
+      STELLAR_API_URL: "http://ipsa-api:${STELLAR_API_PORT}"
+      ROUTER_CONTRACT_ADDRESS: "${ROUTER_CONTRACT_ADDRESS}"
+      TRANSFER_CONTRACT_ADDRESS: "${TRANSFER_CONTRACT_ADDRESS}"
+      STELLAR_SOURCE_ACCOUNT: "${DEPLOYER_ADDRESS}"
+      STELLAR_CHAIN_ID: "${STELLAR_CHAIN_ID:-stellar-testnet}"
+      COSMOS_CHAIN_ID: "${COSMOS_CHAIN_ID:-simd-1}"
+      COSMOS_RELAYER_ADDRESS: "${COSMOS_RELAYER_ADDRESS}"
+      ROUTER_GENESIS_LEDGER: "${ROUTER_GENESIS_LEDGER}"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost ${STELLAR_GATEWAY_GRPC_PORT}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  scp-verifier:
+    profiles: [verifier, staging]
+    image: ${VERIFIER_IMAGE:-amandagonsalvesx/ipsa-scp-verifier}:${VERIFIER_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${VERIFIER_PORT:-8110}:8110"
+    command:
+      - "--serve"
+      - "8110"
+      - "--network"
+      - "${VERIFIER_NETWORK:-mainnet}"
+    environment:
+      SCP_VERIFY_CORS_ORIGINS: "${VERIFIER_CORS_ORIGINS:-}"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8110/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  stellar-watcher:
+    profiles: [watcher, local, staging]
+    image: ${WATCHER_IMAGE:-stellar/stellar-core}:${WATCHER_TAG:-latest}
+    platform: linux/amd64
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/etc/stellar/entrypoint.sh"]
+    ports:
+      - "${WATCHER_HTTP_PORT:-11626}:11626"
+    volumes:
+      - ./watcher/stellar-core.${WATCHER_NETWORK:-testnet}.cfg:/etc/stellar/stellar-core.cfg:ro
+      - ./watcher/entrypoint.sh:/etc/stellar/entrypoint.sh:ro
+      - watcher-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11626/info | grep -q 'Synced!'"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+
+  ipsa-api:
+    image: ${API_IMAGE}:${API_TAG}
+    entrypoint: ["ipsa-api"]
+    profiles: [local, staging]
+    restart: unless-stopped
+    depends_on:
+      node:
+        condition: service_started
+        required: false
+      cosmos:
+        condition: service_healthy
+        required: false
+    ports:
+      - "${STELLAR_API_PORT}:${STELLAR_API_PORT}"
+    environment:
+      RUST_LOG: "${IPSA_LOG_LEVEL:-info}"
+      STELLAR_API_HOST: "0.0.0.0"
+      STELLAR_API_PORT: "${STELLAR_API_PORT}"
+      STELLAR_API_CORS_ORIGINS: "${STELLAR_API_CORS_ORIGINS:-}"
+      STELLAR_RPC_URL: "${STELLAR_RPC_URL}"
+      NETWORK_PASSPHRASE: "${NETWORK_PASSPHRASE}"
+      STELLAR_SOURCE_ACCOUNT: "${DEPLOYER_ADDRESS}"
+      ROUTER_CONTRACT_ADDRESS: "${ROUTER_CONTRACT_ADDRESS}"
+      TRANSFER_CONTRACT_ADDRESS: "${TRANSFER_CONTRACT_ADDRESS}"
+      STELLAR_CHAIN_ID: "${STELLAR_CHAIN_ID:-stellar-testnet}"
+      COSMOS_CHAIN_ID: "${COSMOS_CHAIN_ID:-}"
+      COSMOS_ACCOUNT_PREFIX: "${COSMOS_ACCOUNT_PREFIX:-cosmos}"
+      COSMOS_CLIENT_ID: "${COSMOS_CLIENT_ID:-}"
+      STELLAR_CLIENT_ID: "${STELLAR_CLIENT_ID:-}"
+      COSMOS_GAS_DENOM: "${COSMOS_GAS_DENOM:-}"
+      COSMOS_PUBLIC_RPC_URL: "${COSMOS_PUBLIC_RPC_URL:-}"
+      COSMOS_PUBLIC_REST_URL: "${COSMOS_PUBLIC_REST_URL:-}"
+      DEPLOYER_ADDRESS: "${DEPLOYER_ADDRESS:-}"
+      RELAYER_CONFIG_PATH: "/config/relayer.yml"
+      RELAYER_API_URL: "${RELAYER_API_URL:-http://relayer:9001}"
+      COSMOS_RPC_URL: "${COSMOS_RPC_URL_INTERNAL:-http://cosmos:26657}"
+      STELLAR_WATCHER_DB: "${STELLAR_WATCHER_DB:-/watcher/stellar-misc.db}"
+      POSTGRES_USER: "${POSTGRES_USER:-relayer}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-relayer}"
+      POSTGRES_DB: "${POSTGRES_DB:-relayer}"
+      POSTGRES_HOST: "${POSTGRES_HOST:-postgres}"
+    volumes:
+      - watcher-data:/watcher:ro
+      - ./relayer.yml:/config/relayer.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${STELLAR_API_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  postgres:
+    profiles: [ibcv2]
+    image: postgres:18
+    restart: always
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-relayer}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-relayer}"
+      POSTGRES_DB: "${POSTGRES_DB:-relayer}"
+    ports:
+      - "${POSTGRES_PORT:-42500}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-relayer} -d ${POSTGRES_DB:-relayer}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  relayer:
+    profiles: [ibcv2]
+    image: ${RELAYER_IMAGE:-amandagonsalvesx/ipsa-relayer}:${RELAYER_TAG:-latest}
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ipsa-gateway:
+        condition: service_healthy
+        required: false
+    command: ["--config", "/config/relayer.yml", "--db-migrate"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-relayer}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-relayer}"
+    ports:
+      - "${RELAYER_API_PORT:-9001}:9001"
+      - "${RELAYER_METRICS_PORT:-48001}:48001"
+    volumes:
+      - ./relayer.yml:/config/relayer.yml:ro
+      - ./relayer-keys.json:/config/keys.json:ro
+
+volumes:
+  watcher-data:
+  cosmos-home:
+  pgdata:

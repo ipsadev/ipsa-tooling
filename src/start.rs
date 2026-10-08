@@ -128,7 +128,7 @@ pub async fn run(
         logger::detail("skip ibcv2 relayer");
     } else {
         logger::step("Step 8: writing relayer keys + starting postgres and the relayer");
-        relayer::keys::import(&cfg, root)?;
+        relayer::keys::import(&cfg)?;
         services::up(root, &[Service::Postgres])?;
 
         if deployed || created {
@@ -162,7 +162,7 @@ async fn pair_clients(root: &Path, http: &reqwest::Client, force: bool) -> Resul
     clients::cosmos::run(&cfg, &before, root, http, force).await?;
 
     let cfg = Config::load(root);
-    clients::stellar::run(&cfg, &ClientsConfig::from(&cfg), root, http, force).await?;
+    clients::stellar::run(&cfg, &ClientsConfig::from(&cfg), http, force).await?;
 
     let cfg = Config::load(root);
     let after = ClientsConfig::from(&cfg);

@@ -25,14 +25,17 @@ pub async fn run(root: &Path, cfg: &Config, http: &reqwest::Client) -> Result<()
     );
 
     logger::step("repository");
-    logger::ok(&format!("repo root: {}", root.display()));
+    logger::ok(&format!("stack: {}", root.display()));
 
-    let env_file = root.join(".env");
+    let env_file = crate::config::tooling_env();
 
     if env_file.exists() {
-        logger::ok(".env present");
+        logger::ok(&format!(".env present: {}", env_file.display()));
     } else {
-        logger::fail(".env missing — copy .env.example and fill it in");
+        logger::fail(&format!(
+            ".env missing at {} — copy the .env.example beside it and fill it in",
+            env_file.display()
+        ));
     }
 
     logger::step("configuration");
@@ -43,18 +46,18 @@ pub async fn run(root: &Path, cfg: &Config, http: &reqwest::Client) -> Result<()
     );
     shared::flag(
         "ROUTER_CONTRACT_ADDRESS",
-        !cfg.stellar.ibc_router.is_empty(),
-        "router address (from contracts-cd, set in .env)",
+        !cfg.deployment.ibc_router.is_empty(),
+        "router address (written by tx contracts deploy)",
     );
     shared::flag(
         "TRANSFER_CONTRACT_ADDRESS",
-        !cfg.stellar.transfer_app.is_empty(),
+        !cfg.deployment.transfer_app.is_empty(),
         "transfer-app address",
     );
     shared::flag(
         "relayer.yml",
         Path::new(&cfg.relayer.config).exists(),
-        "mounted into the ibc-relayer container",
+        "mounted into the relayer container",
     );
 
     logger::step("services");
@@ -69,7 +72,7 @@ pub async fn run(root: &Path, cfg: &Config, http: &reqwest::Client) -> Result<()
     logger::status_line("gateway-grpc", gateway, &cfg.stellar.gateway_url);
 
     let relayer = probe::tcp_ok(&cfg.relayer.api_addr);
-    logger::status_line("ibc-relayer", relayer, &cfg.relayer.api_addr);
+    logger::status_line("relayer", relayer, &cfg.relayer.api_addr);
 
     if !cosmos || !api {
         logger::hint("bring the stack up with: ipsa up");

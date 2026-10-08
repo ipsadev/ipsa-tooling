@@ -9,7 +9,6 @@ use sha2::{Digest, Sha256};
 
 use crate::{logger, run, services::cosmos::tx::CosmosSigner, tools};
 
-const CRATE: &str = "stellar-light-client";
 const DEPOSIT_AMOUNT: u64 = 10_000_000;
 const STORE_GAS_LIMIT: u64 = 150_000_000;
 const STORE_FEE_AMOUNT: u64 = 4_500_000;
@@ -24,7 +23,6 @@ const FUND_AMOUNT: u64 = 100_000_000;
 const FUND_GAS_LIMIT: u64 = 200_000;
 const FUND_FEE_AMOUNT: u64 = 10_000;
 
-const RELEASE_TAG: &str = "v0.1.1";
 const FETCH_SCRIPT: &str = include_str!("../../../scripts/fetch-wasm.sh");
 const GOV_AUTHORITY: &str = "cosmos10d07y265gmmuvt4z0w9aw880jnsr700j6zn9kn";
 const TESTNET_DEPOSIT_UATOM: u64 = 50_000_000;
@@ -39,7 +37,7 @@ pub async fn upload(
         return prepare_testnet_proposal(root, from);
     }
 
-    logger::banner("contracts upload-wasm (stellar-light-client -> Cosmos 08-wasm)");
+    logger::banner("contracts upload-wasm (light client -> Cosmos 08-wasm)");
 
     let (bytes, local_sha) = build_wasm(root)?;
 
@@ -81,7 +79,7 @@ pub async fn upload(
         let proposal_id = signer
             .submit_store_code(
                 bytes,
-                format!("upload-stellar-light-client: {CRATE}"),
+                "upload-light-client".to_string(),
                 "Registers stellar_light_client.wasm for the 08-wasm client type".to_string(),
                 DEPOSIT_AMOUNT as u128,
                 STORE_GAS_LIMIT,
@@ -114,7 +112,7 @@ pub async fn upload(
     }
 
     crate::shared::env_upsert(
-        &root.join(".env"),
+        &crate::config::tooling_env(),
         &[("LIGHT_CLIENT_WASM_CHECKSUM", local_sha.as_str())],
     )?;
     logger::detail(&format!("LIGHT_CLIENT_WASM_CHECKSUM={local_sha}"));
@@ -167,12 +165,35 @@ fn build_wasm(root: &Path) -> Result<(Vec<u8>, String)> {
     Ok((gz, sha))
 }
 
+struct Release {
+    repository: String,
+    tag: String,
+}
+
+impl Release {
+    fn from_env() -> Result<Self> {
+        Ok(Self {
+            repository: crate::config::required("LIGHT_CLIENT_REPOSITORY")?,
+            tag: crate::config::required("LIGHT_CLIENT_VERSION")?,
+        })
+    }
+
+    fn name(&self) -> &str {
+        self.repository
+            .rsplit('/')
+            .next()
+            .unwrap_or(&self.repository)
+    }
+}
+
 fn fetch_release(root: &Path) -> Result<PathBuf> {
     let dist = root.join("dist");
     let dist_text = dist.display().to_string();
+    let release = Release::from_env()?;
 
     logger::step(&format!(
-        "fetch-wasm ({CRATE} {RELEASE_TAG} release, checksum verified)"
+        "fetch-wasm ({} {} release, checksum verified)",
+        release.repository, release.tag
     ));
 
     run::command(
@@ -183,7 +204,8 @@ fn fetch_release(root: &Path) -> Result<PathBuf> {
             FETCH_SCRIPT,
             "fetch-wasm",
             dist_text.as_str(),
-            RELEASE_TAG,
+            release.tag.as_str(),
+            release.repository.as_str(),
         ],
     )?;
 
@@ -216,7 +238,11 @@ fn verify_checksums(dist: &Path) -> Result<()> {
     Ok(())
 }
 
-fn proposal_summary(checksum: &str) -> String {
+fn proposal_summary(checksum: &str, release: &Release) -> String {
+    let repository = &release.repository;
+    let tag = &release.tag;
+    let name = release.name();
+
     format!(
         "Stores the wasm byte code for a Stellar light client, so that clients of type 08-wasm \
 tracking Stellar can be created on this chain. Storing code does not create a client and grants no \
@@ -226,18 +252,18 @@ threshold. Each node declares the quorum slices it trusts, and a value is extern
 trusted set is quorum-intersecting. The contract reproduces that on chain in eight steps: envelope \
 signatures, statement validation, quorum-set authentication, the quorum check, value agreement, \
 ledger binding, next-slot binding and result-set binding.\n\n\
-Artifact: https://github.com/ipsadev/stellar-light-client/releases/tag/{RELEASE_TAG}\n\
+Artifact: https://github.com/{repository}/releases/tag/{tag}\n\
 sha256 (uncompressed, as recorded on chain): {checksum}\n\n\
 Reproduce it:\n\
-  git clone --branch {RELEASE_TAG} https://github.com/ipsadev/stellar-light-client\n\
-  cd stellar-light-client\n\
+  git clone --branch {tag} https://github.com/{repository}\n\
+  cd {name}\n\
   ./scripts/release-build.sh dist\n\
   cat dist/checksums.txt\n\n\
 The build runs in a pinned container so the result does not depend on the rebuilding machine. The \
 contract implements the full 08-wasm sudo surface including migrate_client_store, so a client \
 created from this code can be migrated or recovered rather than abandoned.\n\n\
 This is a testnet request. The code has not yet had a third-party audit.\n\n\
-Runbook: https://github.com/ipsadev/stellar-light-client/tree/{RELEASE_TAG}/README.md"
+Runbook: https://github.com/{repository}/tree/{tag}/README.md"
     )
 }
 
@@ -259,7 +285,7 @@ fn prepare_testnet_proposal(root: &Path, from: Option<&str>) -> Result<()> {
         "messages": [store_msg.clone()],
         "metadata": crate::config::get("COSMOS_PROPOSAL_METADATA", "ipfs://"),
         "title": "Store the Stellar (SCP) light client wasm",
-        "summary": proposal_summary(&sha),
+        "summary": proposal_summary(&sha, &Release::from_env()?),
         "deposit": format!("{TESTNET_DEPOSIT_UATOM}uatom"),
     });
 

@@ -60,7 +60,7 @@ fn stellar(cfg: &Config, root: &Path, client_id: &str, counterparty: &str) -> Re
     let router = cfg.deployment.ibc_router.clone();
 
     if router.is_empty() {
-        bail!("ROUTER_CONTRACT_ADDRESS is not set in .env — deploy with contracts-cd in ipsa-contracts, then set the address it reports");
+        bail!("ROUTER_CONTRACT_ADDRESS is not set in .env — deploy the contracts with `ipsa tx contracts deploy --stellar`, which writes it");
     }
 
     let prefix = format!("[\"{}\"]", hex::encode(STELLAR_COMMITMENT_PREFIX));

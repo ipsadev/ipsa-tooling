@@ -18,13 +18,11 @@ pub(crate) struct CreateSpec<'a> {
 // A new client id has to reach both files the stack reads it from: .env, which
 // every ipsa command loads, and relayer.yml, whose counterparty_chains table is
 // how the relayer maps a packet's source client to its destination chain.
-pub(crate) fn record(
-    cfg: &ClientsConfig,
-    root: &Path,
-    spec: &CreateSpec<'_>,
-    client_id: &str,
-) -> Result<()> {
-    shared::env_upsert(&root.join(".env"), &[(spec.result_env_var, client_id)])?;
+pub(crate) fn record(cfg: &ClientsConfig, spec: &CreateSpec<'_>, client_id: &str) -> Result<()> {
+    shared::env_upsert(
+        &crate::config::tooling_env(),
+        &[(spec.result_env_var, client_id)],
+    )?;
     logger::detail(&format!("{}={client_id}", spec.result_env_var));
 
     let path = Path::new(&cfg.relayer_config);
@@ -46,7 +44,7 @@ pub(crate) fn record(
         }
         Ok(false) => logger::detail(&format!("{} already routed {client_id}", path.display())),
         Err(error) => logger::warn(&format!(
-            "could not route {client_id} in {}: {error:#} — the ibc-relayer will drop its packets \
+            "could not route {client_id} in {}: {error:#} — the relayer will drop its packets \
              until that table names it",
             path.display()
         )),

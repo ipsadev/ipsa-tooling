@@ -7,7 +7,7 @@ use crate::{
     tx::contracts::{self, config::ContractsConfig},
 };
 
-const CONFIG_PATH: &str = "cli/config/assets.json";
+const CONFIG_PATH: &str = "config/assets.json";
 
 const DEFAULT_ASSETS: &str = r#"[{ "denom": "XLM", "asset": "native", "kind": "local" }]"#;
 
@@ -17,8 +17,8 @@ pub struct AssetEntry {
     pub voucher: bool,
 }
 
-pub fn load(root: &Path) -> Result<Vec<AssetEntry>> {
-    let path = root.join(CONFIG_PATH);
+pub fn load() -> Result<Vec<AssetEntry>> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(CONFIG_PATH);
     let raw = std::fs::read_to_string(&path).unwrap_or_else(|error| {
         logger::warn(&format!(
             "no asset config at {} ({error}); falling back to {DEFAULT_ASSETS}",
@@ -66,12 +66,12 @@ fn field(item: &serde_json::Value, key: &str) -> Result<String> {
         .with_context(|| format!("asset entry missing string field '{key}'"))
 }
 
-pub fn find(root: &Path, denom: &str) -> Result<Option<AssetEntry>> {
-    Ok(load(root)?.into_iter().find(|e| e.denom == denom))
+pub fn find(denom: &str) -> Result<Option<AssetEntry>> {
+    Ok(load()?.into_iter().find(|e| e.denom == denom))
 }
 
 pub fn register_all(cfg: &ContractsConfig, root: &Path, transfer_app: &str) -> Result<()> {
-    let entries = load(root)?;
+    let entries = load()?;
     if entries.is_empty() {
         logger::detail("no assets configured in assets.json — skipping registration");
 

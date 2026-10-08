@@ -74,7 +74,7 @@ fn app(cfg: &Config) -> Result<String> {
     let app = cfg.deployment.gmp_app.clone();
 
     if app.is_empty() {
-        bail!("GMP_CONTRACT_ADDRESS is not set in .env — deploy with contracts-cd in ipsa-contracts, then set the address it reports");
+        bail!("GMP_CONTRACT_ADDRESS is not set in .env — deploy the contracts with `ipsa tx contracts deploy --stellar`, which writes it");
     }
 
     Ok(app)

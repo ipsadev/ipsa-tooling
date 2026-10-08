@@ -63,6 +63,13 @@ pub fn deploy_one(cfg: &ContractsConfig, root: &Path, name: &str) -> Result<Stri
                 deployer,
             ]
         }
+        "stellar_tendermint_light_client" => {
+            if cfg.ibc_router.is_empty() {
+                bail!("ROUTER_CONTRACT_ADDRESS is unset — the tendermint light client only accepts `initialise` from the router it is deployed with, so deploy the router first");
+            }
+
+            vec!["--router".into(), cfg.ibc_router.clone()]
+        }
         _ => vec![],
     };
 
