@@ -232,6 +232,7 @@ pub async fn evm_to_stellar(cfg: &Config, params: &TransferParams) -> Result<Opt
         .call(approval.clone())
         .await
         .map_err(|error| anyhow!("the approval would revert: {error}"))?;
+    let approval = super::priced(&provider, approval).await?;
     provider
         .send_transaction(approval)
         .await
@@ -268,6 +269,7 @@ pub async fn evm_to_stellar(cfg: &Config, params: &TransferParams) -> Result<Opt
         .await
         .map_err(|error| anyhow!("sendTransfer would revert: {error}"))?;
 
+    let send = super::priced(&provider, send).await?;
     let receipt = provider
         .send_transaction(send)
         .await

@@ -183,6 +183,11 @@ pub struct StartArgs {
     pub skip_clients: bool,
     #[arg(
         long,
+        help = "Skip creating the Stellar ↔ EVM clients and registering their counterparties"
+    )]
+    pub skip_evm: bool,
+    #[arg(
+        long,
         help = "Redeploy contracts even if ROUTER_CONTRACT_ADDRESS is already set"
     )]
     pub deploy_contracts: bool,

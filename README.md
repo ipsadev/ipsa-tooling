@@ -122,7 +122,17 @@ Full start, from an empty `.env` to a corridor the relayer can carry both ways:
 7. create the `07-tendermint` client on Stellar and the `08-wasm` client on
    cosmos, routing both in `relayer.yml`
 8. register each client as the other's counterparty
-9. import the relayer keys, start postgres, and start the relayer, recreating
+9. pair the Stellar ↔ EVM corridor: when the two clients named by
+   `STELLAR_EVM_CLIENT_ID` and `EVM_STELLAR_CLIENT_ID` do not already name each
+   other on the Stellar router and the EVM router, create the `sepolia` client on
+   the Stellar router and an `SP1ICSStellar` client on the EVM router (through the
+   proof API), register both counterparties, write the two ids to `.env` and
+   route them in `relayer.yml`. The EVM client id is `EVM_STELLAR_CLIENT_ID`, or
+   the next free `<prefix>-N` when that one is taken. Needs `stellar-proof-api`
+   for this router at `PROOF_API_URL` (`ipsa start` starts it when nothing
+   listens there) and `EVM_PRIVATE_KEY`, an account holding the EVM router's
+   `addClient` role; without the key `ipsa start` stops, unless `--skip-evm`
+10. import the relayer keys, start postgres, and start the relayer, recreating
    it when `relayer.yml` changed
 
 Every step is idempotent: a deployed router, a stored checksum and existing
@@ -134,11 +144,29 @@ recreated on the new router.
 |---|---|
 | `--skip-images` | skip pulling the docker images |
 | `--skip-accounts` | skip provisioning the sender + receiver accounts |
-| `--skip-clients` | skip the light-client wasm, the clients and the counterparties |
+| `--skip-clients` | skip the light-client wasm, the clients and the counterparties (both corridors) |
+| `--skip-evm` | skip only the Stellar ↔ EVM clients and counterparties |
 | `--skip-relayer` | skip the relayer keys, postgres and the relayer |
 | `--deploy-contracts` | redeploy the contracts even if `ROUTER_CONTRACT_ADDRESS` is set |
 
 ---
+
+## `proof-api` — stellar-proof-api on the host
+
+`stellar-proof-api` proves the Stellar ↔ EVM corridor and forwards the Cosmos pairs
+to the gateway. It runs on the host, not in the stack, from its own checkout
+(`ibc-contracts`), which `PROOF_API_DIR` names.
+
+| Command | What it does |
+|---|---|
+| `start` | runs `PROOF_API_BINARY start --config PROOF_API_CONFIG` in `PROOF_API_DIR`, with the variables in that checkout's `PROOF_API_ENV_FILE` (the SP1 prover keys), detached; waits until it listens on `PROOF_API_URL`. Does nothing when something already listens there |
+| `stop` | stops whatever listens on `PROOF_API_URL`, and the pid in `stack/proof-api.pid`; refuses when that process is not `stellar-proof-api`; SIGTERM, then SIGKILL after 30s |
+| `restart` | `stop`, then `start` — the way to make it reread its config |
+| `status` | whether it listens, and its pid |
+
+Output goes to `stack/proof-api.log`. A process started by hand is found by its
+port, so `restart` takes it over. `ipsa start` runs `start` before the EVM step
+when nothing is listening.
 
 ## `cosmos` — local counterparty devnet
 

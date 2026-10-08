@@ -9,6 +9,7 @@ use crate::{
 
 pub mod cosmos;
 pub mod gateway;
+pub mod proof_api;
 pub mod relayer;
 pub mod stellar;
 pub mod verifier;

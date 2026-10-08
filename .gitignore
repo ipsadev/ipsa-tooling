@@ -9,3 +9,5 @@ target
 /stack/relayer-keys.json
 /stack/dist/
 /stack/provider-store-code*.json
+/stack/proof-api.pid
+/stack/proof-api.log

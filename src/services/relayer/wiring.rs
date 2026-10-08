@@ -20,7 +20,7 @@ pub fn set_field(path: &Path, chain_id: &str, key: &str, value: &str) -> Result<
 fn with_field(text: &str, chain_id: &str, key: &str, value: &str) -> Result<String> {
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
 
-    let chain = block_key(&lines, 0, lines.len(), chain_id).ok_or_else(|| {
+    let chain = chain_block(&lines, chain_id).ok_or_else(|| {
         anyhow!("no `{chain_id}:` chain block — the relayer has no config for that chain")
     })?;
 
@@ -66,7 +66,7 @@ fn with_route(
 ) -> Result<String> {
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
 
-    let chain = block_key(&lines, 0, lines.len(), chain_id).ok_or_else(|| {
+    let chain = chain_block(&lines, chain_id).ok_or_else(|| {
         anyhow!("no `{chain_id}:` chain block — the relayer has no config for that chain")
     })?;
 
@@ -101,6 +101,29 @@ fn with_route(
     lines.insert(table + 1, rendered);
 
     Ok(join(&lines, text))
+}
+
+fn chain_block(lines: &[String], chain_id: &str) -> Option<usize> {
+    if let Some(found) = block_key(lines, 0, lines.len(), chain_id) {
+        return Some(found);
+    }
+
+    let chains = block_key(lines, 0, lines.len(), "chains")?;
+    let chains_end = block_end(lines, chains);
+    let child = indent(&lines[chains]) + 2;
+
+    (chains + 1..chains_end)
+        .filter(|&i| indent(&lines[i]) == child && lines[i].trim().ends_with(':'))
+        .find(|&i| {
+            let end = block_end(lines, i);
+
+            lines[i + 1..end].iter().any(|line| {
+                line.trim()
+                    .strip_prefix("chain_id:")
+                    .map(|value| value.trim().trim_matches(|c| c == '\'' || c == '"') == chain_id)
+                    .unwrap_or(false)
+            })
+        })
 }
 
 fn block_key(lines: &[String], from: usize, to: usize, key: &str) -> Option<usize> {
@@ -199,6 +222,15 @@ mod tests {
         let out = with_route(config, "simd-1", "08-wasm-1", "stellar-testnet").unwrap();
 
         assert!(out.contains("        08-wasm-1: 'stellar-testnet'"));
+    }
+
+    #[test]
+    fn a_chain_block_is_found_by_its_chain_id_when_its_key_differs() {
+        let config = "chains:\n  stellar-testnet:\n    chain_id: 'stellar-testnet'\n    ibcv2:\n      counterparty_chains: {}\n  sepolia:\n    chain_id: '11155111'\n    ibcv2:\n      counterparty_chains: {}\n";
+        let out = with_route(config, "11155111", "stellar-testnet-2", "stellar-testnet").unwrap();
+
+        assert!(out.contains("  sepolia:\n    chain_id: '11155111'\n    ibcv2:\n      counterparty_chains:\n        stellar-testnet-2: 'stellar-testnet'"));
+        assert!(out.contains("  stellar-testnet:\n    chain_id: 'stellar-testnet'\n    ibcv2:\n      counterparty_chains: {}"));
     }
 
     #[test]

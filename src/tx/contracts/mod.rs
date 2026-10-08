@@ -167,6 +167,25 @@ pub(crate) fn invoke_as(
     invoke_with_seq_retry(root, &refs)
 }
 
+pub(crate) fn read(
+    cfg: &ContractsConfig,
+    root: &Path,
+    id: &str,
+    call: &[&str],
+    source: &str,
+) -> Result<String> {
+    let mut args = stellar_base_as(cfg, "invoke", source);
+    args.push("--send=no".to_string());
+    args.push("--id".to_string());
+    args.push(id.to_string());
+    args.push("--".to_string());
+    args.extend(call.iter().map(|s| s.to_string()));
+
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+
+    Ok(last_line(&tools::stellar::capture_quiet(root, &refs)?))
+}
+
 fn invoke_with_seq_retry(root: &Path, refs: &[&str]) -> Result<String> {
     const MAX_ATTEMPTS: u32 = 6;
     const DELAY_SECS: u64 = 4;

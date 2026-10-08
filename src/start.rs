@@ -9,6 +9,7 @@ use crate::{
     shared::StartArgs,
     tools,
     tx::{
+        self,
         clients::{self, config::ClientsConfig},
         contracts::{self, config::ContractsConfig},
     },
@@ -124,14 +125,41 @@ pub async fn run(
 
     let cfg = Config::load(root);
 
+    let created_evm = if args.skip_clients || args.skip_evm {
+        logger::detail("skip the Stellar ↔ EVM clients and counterparties");
+
+        false
+    } else if cfg.evm.private_key.is_empty() {
+        bail!(
+            "EVM_PRIVATE_KEY is not set — it deploys the Stellar client on the EVM chain and calls addClient there; set it in {}, or pass --skip-evm",
+            crate::config::tooling_env().display()
+        );
+    } else {
+        logger::step(
+            "Step 8: creating the Stellar ↔ EVM clients and registering their counterparties",
+        );
+
+        let proof_api = services::proof_api::ProofApiConfig::from_env()?;
+
+        if !services::proof_api::listening(&proof_api) {
+            services::proof_api::start(root, &proof_api)?;
+        }
+
+        tx::evm::clients::ensure(&cfg, root).await.map_err(|error| {
+            error.context("the EVM step failed — stellar-proof-api must be running for this router (PROOF_API_URL); pass --skip-evm to start without the EVM corridor")
+        })?
+    };
+
+    let cfg = Config::load(root);
+
     if args.skip_relayer {
         logger::detail("skip ibcv2 relayer");
     } else {
-        logger::step("Step 8: writing relayer keys + starting postgres and the relayer");
+        logger::step("Step 9: writing relayer keys + starting postgres and the relayer");
         relayer::keys::import(&cfg)?;
         services::up(root, &[Service::Postgres])?;
 
-        if deployed || created {
+        if deployed || created || created_evm {
             logger::detail(
                 "relayer.yml changed — recreating the relayer so it reads the new routes",
             );

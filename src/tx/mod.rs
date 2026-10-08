@@ -108,6 +108,19 @@ pub struct DeployArgs {
     pub cosmos: bool,
     #[arg(
         long,
+        requires = "cosmos",
+        help = "With --cosmos: write the store-code request for the public Cosmos testnet (an authz exec file and a gov proposal) instead of storing on the local devnet"
+    )]
+    pub testnet: bool,
+    #[arg(
+        long,
+        value_name = "KEY",
+        requires = "testnet",
+        help = "With --testnet: submit the gov proposal from this gaiad key"
+    )]
+    pub from: Option<String>,
+    #[arg(
+        long,
         value_name = "NAME",
         help = "Wasm file name without the .wasm extension; omit to act on all contracts"
     )]
@@ -245,7 +258,8 @@ async fn contracts_tx(
         ContractsTx::Upload => contracts::upload_all(&cc, root),
         ContractsTx::Deploy(args) => {
             if args.cosmos {
-                return contracts::wasm::upload(root, http, false, None).await;
+                return contracts::wasm::upload(root, http, args.testnet, args.from.as_deref())
+                    .await;
             }
 
             match args.contract {

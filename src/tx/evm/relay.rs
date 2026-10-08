@@ -288,6 +288,7 @@ async fn submit(rpc_url: &str, private_key: &str, to: Address, calldata: Bytes) 
 
     logger::step("send it");
 
+    let request = super::priced(&provider, request).await?;
     let pending = provider
         .send_transaction(request)
         .await

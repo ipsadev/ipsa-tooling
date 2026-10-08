@@ -21,7 +21,7 @@ use std::time::Duration;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use config::Config;
-use services::{relayer::RelayerCmd, ServicesCmd};
+use services::{proof_api::ProofApiCmd, relayer::RelayerCmd, ServicesCmd};
 use tests::TestArgs;
 use tx::TxCmd;
 
@@ -71,6 +71,13 @@ enum Command {
         #[command(subcommand)]
         cmd: ServicesCmd,
     },
+    #[command(
+        about = "stellar-proof-api on the host: start/stop/restart/status (PROOF_API_DIR, PROOF_API_URL)"
+    )]
+    ProofApi {
+        #[command(subcommand)]
+        cmd: ProofApiCmd,
+    },
     #[command(about = "Relayer: write the signing key file")]
     Relayer {
         #[command(subcommand)]
@@ -103,6 +110,7 @@ async fn main() -> Result<()> {
 
         Command::Services { cmd } => services::run(&cfg, root, cmd)?,
 
+        Command::ProofApi { cmd } => services::proof_api::run(root, cmd)?,
         Command::Relayer { cmd } => match cmd {
             RelayerCmd::KeysImport => services::relayer::keys::import(&cfg)?,
             RelayerCmd::Transfers { limit, status } => {

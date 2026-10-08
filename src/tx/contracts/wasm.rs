@@ -27,6 +27,8 @@ const FETCH_SCRIPT: &str = include_str!("../../../scripts/fetch-wasm.sh");
 const GOV_AUTHORITY: &str = "cosmos10d07y265gmmuvt4z0w9aw880jnsr700j6zn9kn";
 const TESTNET_DEPOSIT_UATOM: u64 = 50_000_000;
 
+const METADATA_FILE: &str = "provider-store-code-metadata.json";
+
 pub async fn upload(
     root: &Path,
     http: &reqwest::Client,
@@ -196,13 +198,20 @@ fn fetch_release(root: &Path) -> Result<PathBuf> {
         release.repository, release.tag
     ));
 
+    std::fs::create_dir_all(&dist).with_context(|| format!("creating {dist_text}"))?;
+
+    let script = dist.join("fetch-wasm.sh");
+
+    std::fs::write(&script, FETCH_SCRIPT)
+        .with_context(|| format!("writing {}", script.display()))?;
+
+    let script_text = script.display().to_string();
+
     run::command(
         root,
         "bash",
         &[
-            "-c",
-            FETCH_SCRIPT,
-            "fetch-wasm",
+            script_text.as_str(),
             dist_text.as_str(),
             release.tag.as_str(),
             release.repository.as_str(),
@@ -248,10 +257,12 @@ fn proposal_summary(checksum: &str, release: &Release) -> String {
 tracking Stellar can be created on this chain. Storing code does not create a client and grants no \
 permissions.\n\n\
 Stellar runs the Stellar Consensus Protocol, which has no global validator set and no fixed \
-threshold. Each node declares the quorum slices it trusts, and a value is externalized once the \
-trusted set is quorum-intersecting. The contract reproduces that on chain in eight steps: envelope \
-signatures, statement validation, quorum-set authentication, the quorum check, value agreement, \
-ledger binding, next-slot binding and result-set binding.\n\n\
+threshold: each node declares the quorum slices it trusts. The client accepts a Stellar ledger only \
+when signed EXTERNALIZE statements for it satisfy the quorum configuration pinned in the client \
+state, checked in eight steps: envelope signatures, statement validation, quorum-set \
+authentication, the quorum check, value agreement, ledger binding, next-slot binding and \
+result-set binding. Packet membership is then proven against the root the router publishes in that \
+ledger.\n\n\
 Artifact: https://github.com/{repository}/releases/tag/{tag}\n\
 sha256 (uncompressed, as recorded on chain): {checksum}\n\n\
 Reproduce it:\n\
@@ -263,8 +274,25 @@ The build runs in a pinned container so the result does not depend on the rebuil
 contract implements the full 08-wasm sudo surface including migrate_client_store, so a client \
 created from this code can be migrated or recovered rather than abandoned.\n\n\
 This is a testnet request. The code has not yet had a third-party audit.\n\n\
-Runbook: https://github.com/{repository}/tree/{tag}/README.md"
+Runbook: https://github.com/{repository}/blob/{tag}/README.md"
     )
+}
+
+fn unsigned_tx(message: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "body": {
+            "messages": [message],
+            "memo": "",
+            "timeout_height": "0",
+            "extension_options": [],
+            "non_critical_extension_options": []
+        },
+        "auth_info": {
+            "signer_infos": [],
+            "fee": { "amount": [], "gas_limit": "0", "payer": "", "granter": "" }
+        },
+        "signatures": []
+    })
 }
 
 fn prepare_testnet_proposal(root: &Path, from: Option<&str>) -> Result<()> {
@@ -281,22 +309,55 @@ fn prepare_testnet_proposal(root: &Path, from: Option<&str>) -> Result<()> {
         "wasm_byte_code": wasm_b64,
     });
 
+    let release = Release::from_env()?;
+    let title = "Store the Stellar (SCP) light client wasm";
+    let summary = proposal_summary(&sha, &release);
+    let release_url = format!(
+        "https://github.com/{}/releases/tag/{}",
+        release.repository, release.tag
+    );
+    let metadata_url = crate::config::get(
+        "COSMOS_PROPOSAL_METADATA",
+        &format!(
+            "https://github.com/{}/releases/download/{}/{METADATA_FILE}",
+            release.repository, release.tag
+        ),
+    );
+
+    let metadata = serde_json::json!({
+        "title": title,
+        "authors": ["ipsa"],
+        "summary": summary,
+        "details": format!("Release: {release_url}\nsha256 of the uncompressed wasm, as recorded on chain: {sha}"),
+        "proposal_forum_url": crate::config::get("COSMOS_PROPOSAL_FORUM_URL", &release_url),
+        "vote_option_context": "Yes stores the code. Storing code creates no client and grants no permission.",
+    });
+
+    let metadata_path = root.join(METADATA_FILE);
+    std::fs::write(&metadata_path, serde_json::to_string_pretty(&metadata)?)
+        .with_context(|| format!("writing {}", metadata_path.display()))?;
+    logger::ok(&format!(
+        "wrote {} — publish it at {metadata_url}",
+        metadata_path.display()
+    ));
+
     let proposal = serde_json::json!({
         "messages": [store_msg.clone()],
-        "metadata": crate::config::get("COSMOS_PROPOSAL_METADATA", "ipfs://"),
-        "title": "Store the Stellar (SCP) light client wasm",
-        "summary": proposal_summary(&sha, &Release::from_env()?),
+        "metadata": metadata_url,
+        "title": title,
+        "summary": summary,
         "deposit": format!("{TESTNET_DEPOSIT_UATOM}uatom"),
     });
 
     let authz_path = root.join("provider-store-code.json");
     std::fs::write(
         &authz_path,
-        serde_json::to_string_pretty(&serde_json::json!({ "messages": [store_msg] }))?,
+        serde_json::to_string_pretty(&unsigned_tx(store_msg))?,
     )
     .with_context(|| format!("writing {}", authz_path.display()))?;
     logger::ok(&format!(
-        "wrote {} for an authz holder to exec",
+        "wrote {} for an authz holder: gaiad tx authz exec {} --from <grantee>",
+        authz_path.display(),
         authz_path.display()
     ));
 
@@ -310,7 +371,7 @@ fn prepare_testnet_proposal(root: &Path, from: Option<&str>) -> Result<()> {
     let keyring = crate::config::get("COSMOS_TESTNET_KEYRING_BACKEND", "test");
     let path = proposal_path.display().to_string();
 
-    match resolve_testnet_key(root, from, &testnet, &keyring)? {
+    match resolve_testnet_key(root, from, &keyring)? {
         Some(key) => {
             logger::step(&format!(
                 "gaiad tx gov submit-proposal (from={key}, node={rpc}, chain-id={chain_id})"
@@ -366,12 +427,7 @@ fn prepare_testnet_proposal(root: &Path, from: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn resolve_testnet_key(
-    root: &Path,
-    from: Option<&str>,
-    testnet: &crate::services::cosmos::config::CosmosConfig,
-    keyring: &str,
-) -> Result<Option<String>> {
+fn resolve_testnet_key(root: &Path, from: Option<&str>, keyring: &str) -> Result<Option<String>> {
     if let Some(key) = from {
         if !run::has("gaiad") {
             bail!("gaiad not found in PATH — install Gaia v27 to submit");
@@ -380,14 +436,7 @@ fn resolve_testnet_key(
         return Ok(Some(key.to_string()));
     }
 
-    let mnemonic = {
-        let testnet_specific = crate::config::get("COSMOS_TESTNET_MNEMONIC", "");
-        if testnet_specific.trim().is_empty() {
-            testnet.relayer_mnemonic.clone()
-        } else {
-            testnet_specific
-        }
-    };
+    let mnemonic = crate::config::get("COSMOS_TESTNET_MNEMONIC", "");
     if mnemonic.trim().is_empty() {
         return Ok(None);
     }
