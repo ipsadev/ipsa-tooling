@@ -6,6 +6,7 @@ use serde_json::{json, Map, Value};
 use crate::{
     config::{get, Config},
     logger,
+    services::cosmos::config::CosmosConfig,
 };
 
 pub fn import(cfg: &Config) -> Result<()> {
@@ -13,18 +14,22 @@ pub fn import(cfg: &Config) -> Result<()> {
 
     let mut keys = Map::new();
 
-    let cosmos_chain = cfg.cosmos.chain_id.as_str();
+    let cosmos_chains = [
+        CosmosConfig::devnet_chain_id(),
+        CosmosConfig::testnet().chain_id.as_str().to_string(),
+    ];
     let cosmos_key = get("COSMOS_RELAYER_PRIVATE_KEY", "");
 
-    if cosmos_key.is_empty() {
-        logger::warn(&format!(
-            "COSMOS_RELAYER_PRIVATE_KEY unset — skipping {cosmos_chain}"
-        ));
-    } else {
-        keys.insert(
-            cosmos_chain.to_string(),
-            json!({ "private_key": cosmos_key }),
-        );
+    for cosmos_chain in &cosmos_chains {
+        if cosmos_key.is_empty() {
+            logger::warn(&format!(
+                "COSMOS_RELAYER_PRIVATE_KEY unset — skipping {cosmos_chain}"
+            ));
+
+            continue;
+        }
+
+        keys.insert(cosmos_chain.clone(), json!({ "private_key": cosmos_key }));
         logger::ok(&format!("{cosmos_chain}: relayer key written"));
     }
 

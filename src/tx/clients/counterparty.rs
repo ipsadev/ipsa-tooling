@@ -45,7 +45,11 @@ pub async fn run(
     let stellar_client = cc.stellar_client.as_ref().map(|c| c.as_str()).unwrap_or("");
 
     if cosmos_client.is_empty() || stellar_client.is_empty() {
-        bail!("both COSMOS_CLIENT_ID and STELLAR_CLIENT_ID must be set — create the clients first");
+        bail!(
+            "both {} and {} must be set — create the clients first",
+            cfg.cosmos.client_id_variable(),
+            cfg.cosmos.stellar_client_id_variable()
+        );
     }
 
     match side {

@@ -369,6 +369,43 @@ for the live Sepolia corridor.
 
 ---
 
+## The Stellar ↔ Cosmos Hub testnet corridor
+
+`COSMOS_NETWORK=testnet` in `.env` points the Cosmos side at the Cosmos Hub testnet
+(`provider`) instead of the local `simd-1`; `devnet`, the default, keeps the local chain.
+The `COSMOS_TESTNET_*` variables describe `provider`, and `COSMOS_RELAYER_PRIVATE_KEY`
+signs on both networks, so it must hold ATOM for testnet use.
+
+What changes with `testnet`:
+
+- **Clients and counterparties** are created and registered on `provider`, and their ids
+  are recorded as `COSMOS_TESTNET_CLIENT_ID` (the 07-tendermint client on Stellar) and
+  `COSMOS_TESTNET_STELLAR_CLIENT_ID` (the 08-wasm client on `provider`), so switching back
+  to `devnet` finds the `simd-1` ids untouched. The 08-wasm client needs the light-client
+  code already stored on `provider` by governance (`ipsa tx contracts upload-wasm --testnet`).
+- **Transfers from Cosmos** are built and signed here as a `MsgTransfer` with
+  `COSMOS_RELAYER_PRIVATE_KEY`, instead of running `simd` in the devnet container, so
+  `--from` must be that key's address. Transfers from Stellar are unchanged.
+- **The stack** gets `provider`'s chain id, client ids and endpoints: `ipsa` exports them
+  before running compose, so the gateway stamps `provider` into the messages it builds.
+- **The relayer** relays through the `provider` block in `relayer.yml`, which uses the
+  public RPC and gRPC (TLS) and pays `uatom` at a gas price of 0.005, twice the chain's
+  minimum. `ipsa relayer keys-import` writes the Cosmos key under both `simd-1` and
+  `provider`.
+- **The proof API** is started with its config inline (`PROOF_API_CONFIG_JSON`) and its
+  `forward` modules pointed at the active Cosmos chain, so the same `testnet.json` serves
+  both networks. This needs a `stellar-proof-api` built with inline config support.
+
+```sh
+ipsa tx clients create --cosmos       # 07-tendermint client tracking provider, on Stellar
+ipsa tx clients create --stellar      # 08-wasm client tracking Stellar, on provider
+ipsa tx clients counterparty
+ipsa tx transfer --from G… --to cosmos1… --amount 1 --relay --wait
+ipsa tx transfer --from cosmos1… --to G… --amount 1000 --denom uatom --relay --wait
+```
+
+---
+
 ## `tx query` — read client states + balances
 
 ```sh

@@ -313,6 +313,9 @@ async fn transfer_tx(
         (Chain::Stellar, Chain::Evm) => evm::transfer::stellar_to_evm(cfg, root, &params)?,
         (Chain::Evm, Chain::Stellar) => evm::transfer::evm_to_stellar(cfg, &params).await?,
         (Chain::Stellar, Chain::Cosmos) => transfer::stellar_to_cosmos(cfg, root, &params)?,
+        (Chain::Cosmos, Chain::Stellar) if !cfg.cosmos.is_local() => {
+            transfer::cosmos_to_stellar_signed(cfg, http, &params).await?
+        }
         (Chain::Cosmos, Chain::Stellar) => transfer::cosmos_to_stellar(cfg, root, &params)?,
         _ => bail!(
             "transfer must cross chains (stellar↔cosmos or stellar↔evm): got {} → {}",

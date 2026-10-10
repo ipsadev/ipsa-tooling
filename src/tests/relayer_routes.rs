@@ -29,8 +29,14 @@ pub fn ensure(cfg: &Config, root: &Path) -> Result<()> {
     }
 
     for (id, name) in [
-        (&cfg.deployment.cosmos_client_id, "COSMOS_CLIENT_ID"),
-        (&cfg.deployment.stellar_client_id, "STELLAR_CLIENT_ID"),
+        (
+            &cfg.deployment.cosmos_client_id,
+            cfg.cosmos.client_id_variable(),
+        ),
+        (
+            &cfg.deployment.stellar_client_id,
+            cfg.cosmos.stellar_client_id_variable(),
+        ),
     ] {
         let id = required(id, name)?;
 

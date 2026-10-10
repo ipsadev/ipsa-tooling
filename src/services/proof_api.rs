@@ -8,8 +8,9 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use serde_json::Value;
 
-use crate::{config::get, logger, probe};
+use crate::{config::get, logger, probe, services::cosmos::config::CosmosConfig};
 
 const PID_FILE: &str = "proof-api.pid";
 
@@ -18,6 +19,8 @@ const LOG_FILE: &str = "proof-api.log";
 const START_TIMEOUT: Duration = Duration::from_secs(180);
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(30);
+
+const INLINE_CONFIG_VARIABLE: &str = "PROOF_API_CONFIG_JSON";
 
 const POLL: Duration = Duration::from_millis(500);
 
@@ -143,6 +146,11 @@ pub fn start(root: &Path, cfg: &ProofApiConfig) -> Result<()> {
     let env_file = directory.join(&cfg.env_file);
     let variables = load_env_file(&env_file)?;
 
+    let cosmos_chain = CosmosConfig::from_env().chain_id.as_str().to_string();
+    let stellar_chain = get("STELLAR_CHAIN_ID", "stellar-testnet");
+    let inline = forwarding_to(&fs::read_to_string(&config)?, &stellar_chain, &cosmos_chain)
+        .with_context(|| format!("reading {}", config.display()))?;
+
     let log_path = root.join(LOG_FILE);
     let log = fs::OpenOptions::new()
         .create(true)
@@ -152,7 +160,7 @@ pub fn start(root: &Path, cfg: &ProofApiConfig) -> Result<()> {
     let errors = log.try_clone()?;
 
     logger::step(&format!(
-        "{} start --config {} (in {}, {} variables from {})",
+        "{} start --config {} (in {}, {} variables from {}, forwarding {stellar_chain} ↔ {cosmos_chain})",
         cfg.binary,
         cfg.config,
         directory.display(),
@@ -164,6 +172,7 @@ pub fn start(root: &Path, cfg: &ProofApiConfig) -> Result<()> {
         .args(["start", "--config", &cfg.config])
         .current_dir(&directory)
         .envs(variables)
+        .env(INLINE_CONFIG_VARIABLE, inline)
         .stdin(Stdio::null())
         .stdout(log)
         .stderr(errors)
@@ -287,6 +296,31 @@ fn status(root: &Path, cfg: &ProofApiConfig) {
     }
 
     logger::detail(&format!("log: {}", root.join(LOG_FILE).display()));
+}
+
+pub fn forwarding_to(config: &str, stellar_chain: &str, cosmos_chain: &str) -> Result<String> {
+    let mut config: Value = serde_json::from_str(config)?;
+
+    let modules = config
+        .get_mut("modules")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| anyhow!("the proof api config has no modules array"))?;
+
+    for module in modules {
+        if module.get("name").and_then(Value::as_str) != Some("forward") {
+            continue;
+        }
+
+        for side in ["src_chain", "dst_chain"] {
+            let is_stellar = module.get(side).and_then(Value::as_str) == Some(stellar_chain);
+
+            if !is_stellar {
+                module[side] = Value::String(cosmos_chain.to_string());
+            }
+        }
+    }
+
+    Ok(serde_json::to_string(&config)?)
 }
 
 fn load_env_file(path: &Path) -> Result<Vec<(String, String)>> {

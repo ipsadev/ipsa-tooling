@@ -27,7 +27,8 @@ pub async fn run(
     if !force {
         if let Some(existing) = &cc.cosmos_client {
             logger::warn(&format!(
-                "COSMOS_CLIENT_ID already set ({}). Use --force to create another.",
+                "{} already set ({}). Use --force to create another.",
+                cfg.cosmos.client_id_variable(),
                 existing.as_str()
             ));
 
@@ -77,7 +78,7 @@ pub async fn run(
         &CreateSpec {
             host_chain: cfg.stellar.chain_id.as_str(),
             reference_chain: cfg.cosmos.chain_id.as_str(),
-            result_env_var: "COSMOS_CLIENT_ID",
+            result_env_var: cfg.cosmos.client_id_variable(),
         },
         &client_id,
     )?;

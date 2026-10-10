@@ -95,8 +95,40 @@ impl CosmosConfig {
         }
     }
 
+    pub fn devnet_chain_id() -> String {
+        dotenvy::from_path_iter(crate::config::tooling_env())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .find(|(name, _)| name == "COSMOS_CHAIN_ID")
+            .map(|(_, value)| value)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| DEFAULT_DEVNET_CHAIN_ID.to_string())
+    }
+
+    pub fn from_env() -> Self {
+        match get("COSMOS_NETWORK", "devnet").trim() {
+            "testnet" => Self::testnet(),
+            _ => Self::devnet(),
+        }
+    }
+
     pub fn is_local(&self) -> bool {
         self.network.is_local()
+    }
+
+    pub fn client_id_variable(&self) -> &'static str {
+        match self.network {
+            CosmosNetwork::Devnet => "COSMOS_CLIENT_ID",
+            CosmosNetwork::Testnet => "COSMOS_TESTNET_CLIENT_ID",
+        }
+    }
+
+    pub fn stellar_client_id_variable(&self) -> &'static str {
+        match self.network {
+            CosmosNetwork::Devnet => "STELLAR_CLIENT_ID",
+            CosmosNetwork::Testnet => "COSMOS_TESTNET_STELLAR_CLIENT_ID",
+        }
     }
 }
 

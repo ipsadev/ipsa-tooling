@@ -214,10 +214,15 @@ pub fn run(
         logger::detail(&format!("{name}={value}"));
     }
 
-    let stale = ["COSMOS_CLIENT_ID", "STELLAR_CLIENT_ID"]
-        .into_iter()
-        .filter(|name| !crate::config::get(name, "").is_empty())
-        .collect::<Vec<_>>();
+    let stale = [
+        "COSMOS_CLIENT_ID",
+        "STELLAR_CLIENT_ID",
+        "COSMOS_TESTNET_CLIENT_ID",
+        "COSMOS_TESTNET_STELLAR_CLIENT_ID",
+    ]
+    .into_iter()
+    .filter(|name| !crate::config::get(name, "").is_empty())
+    .collect::<Vec<_>>();
 
     if !stale.is_empty() {
         logger::warn(&format!(

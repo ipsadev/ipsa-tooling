@@ -44,6 +44,25 @@ chains:
       should_relay_success_acks: true
       should_relay_error_acks: true
 
+  provider:
+    chain_name: 'cosmoshub-testnet'
+    chain_id: 'provider'
+    type: 'cosmos'
+    environment: 'testnet'
+    gas_token_symbol: 'ATOM'
+    gas_token_decimals: 6
+    cosmos:
+      rpc: 'https://rpc.provider-sentry-01.ics-testnet.polypore.xyz'
+      grpc: 'grpc.provider-sentry-01.ics-testnet.polypore.xyz:443'
+      grpc_tls_enabled: true
+      address_prefix: 'cosmos'
+      ibcv2_tx_fee_denom: 'uatom'
+      gas_price: 0.005
+    ibcv2:
+      counterparty_chains: {}
+      should_relay_success_acks: true
+      should_relay_error_acks: true
+
   stellar-testnet:
     chain_name: 'stellar'
     chain_id: 'stellar-testnet'

@@ -173,12 +173,36 @@ pub fn load_tooling_env() {
     let _ = dotenvy::from_path_override(tooling_env());
 }
 
+fn export_for_services(cosmos: &CosmosConfig) {
+    let exported = [
+        ("COSMOS_CHAIN_ID", cosmos.chain_id.as_str().to_string()),
+        ("COSMOS_GAS_DENOM", cosmos.gas_denom.clone()),
+        ("COSMOS_RPC_URL_INTERNAL", cosmos.rpc_url.clone()),
+        ("COSMOS_PUBLIC_RPC_URL", cosmos.rpc_url.clone()),
+        ("COSMOS_PUBLIC_REST_URL", cosmos.rest_url.clone()),
+        ("COSMOS_CLIENT_ID", get(cosmos.client_id_variable(), "")),
+        (
+            "STELLAR_CLIENT_ID",
+            get(cosmos.stellar_client_id_variable(), ""),
+        ),
+    ];
+
+    for (name, value) in exported {
+        std::env::set_var(name, value);
+    }
+}
+
 impl Config {
     pub fn load(root: &Path) -> Self {
         load_tooling_env();
 
+        let cosmos = CosmosConfig::from_env();
+
+        if !cosmos.is_local() {
+            export_for_services(&cosmos);
+        }
+
         Self {
-            cosmos: CosmosConfig::devnet(),
             stellar: StellarConfig::from_env(),
             relayer: RelayerConfig::from_env(root),
             verifier: crate::services::verifier::VerifierConfig::from_env(),
@@ -197,11 +221,12 @@ impl Config {
                 mock_client_type: get("MOCK_CLIENT_TYPE", ClientTypes::mock()),
                 attestation_client_type: get("ATTESTATION_CLIENT_TYPE", ClientTypes::attestation()),
                 tendermint_client_type: get("TENDERMINT_CLIENT_TYPE", ClientTypes::tendermint()),
-                cosmos_client_id: get("COSMOS_CLIENT_ID", ""),
-                stellar_client_id: get("STELLAR_CLIENT_ID", ""),
+                cosmos_client_id: get(cosmos.client_id_variable(), ""),
+                stellar_client_id: get(cosmos.stellar_client_id_variable(), ""),
             },
             accounts: AccountsConfig::from_env(),
             evm: crate::tx::evm::config::EvmCorridorConfig::from_env(),
+            cosmos,
         }
     }
 
