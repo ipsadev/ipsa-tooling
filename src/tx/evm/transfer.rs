@@ -11,7 +11,7 @@ use crate::{
     tx::{
         contracts::{self, config::ContractsConfig},
         evm::config::required,
-        transfer::TransferParams,
+        transfer::{assets, TransferParams},
     },
 };
 
@@ -48,9 +48,14 @@ pub fn stellar_to_evm(
         );
     }
 
-    let denom = match params.denom.as_str() {
-        "XLM" | "xlm" | "native" => native_asset_contract(root, &contracts_config)?,
-        other => other.to_string(),
+    let requested = match params.denom.as_str() {
+        "xlm" | "native" => "XLM",
+        other => other,
+    };
+
+    let denom = match assets::find(requested)? {
+        Some(entry) => assets::registered_denom(&contracts_config, root, transfer_app, &entry)?,
+        None => requested.to_string(),
     };
 
     let timeout_seconds = params.timeout_secs.max(MINIMUM_TIMEOUT_SECONDS);
@@ -111,28 +116,6 @@ pub fn stellar_to_evm(
     }
 
     Ok(hash)
-}
-
-fn native_asset_contract(root: &Path, contracts_config: &ContractsConfig) -> Result<String> {
-    let mut arguments = vec![
-        "contract".to_string(),
-        "id".to_string(),
-        "asset".to_string(),
-        "--asset".to_string(),
-        "native".to_string(),
-    ];
-
-    arguments.extend(contracts_config.net_flags());
-
-    let references: Vec<&str> = arguments.iter().map(String::as_str).collect();
-    let output = tools::stellar::capture_all(root, &references)?;
-
-    output
-        .lines()
-        .map(str::trim)
-        .find(|line| line.len() == 56 && line.starts_with('C'))
-        .map(str::to_string)
-        .ok_or_else(|| anyhow!("the stellar CLI did not print the native asset contract id"))
 }
 
 alloy::sol! {
