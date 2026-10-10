@@ -51,6 +51,9 @@ services:
       ipsa-api:
         condition: service_healthy
         required: false
+      postgres:
+        condition: service_healthy
+        required: false
     ports:
       - "${STELLAR_GATEWAY_GRPC_PORT}:${STELLAR_GATEWAY_GRPC_PORT}"
     environment:
@@ -65,6 +68,7 @@ services:
       COSMOS_CHAIN_ID: "${COSMOS_CHAIN_ID:-simd-1}"
       COSMOS_RELAYER_ADDRESS: "${COSMOS_RELAYER_ADDRESS}"
       ROUTER_GENESIS_LEDGER: "${ROUTER_GENESIS_LEDGER}"
+      GATEWAY_DB_URL: "${GATEWAY_DB_URL:-postgres://${POSTGRES_USER:-relayer}:${POSTGRES_PASSWORD:-relayer}@postgres:5432/${POSTGRES_DB:-relayer}}"
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost ${STELLAR_GATEWAY_GRPC_PORT}"]
       interval: 10s
