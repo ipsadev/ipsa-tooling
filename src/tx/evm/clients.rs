@@ -38,6 +38,8 @@ alloy::sol! {
 
 const MAX_CLIENT_ID_PROBES: u32 = 100;
 
+const SOLIDITY_ABI_ENCODING: &str = "application/x-solidity-abi";
+
 pub async fn create(cfg: &Config, root: &Path) -> Result<()> {
     logger::banner("tx clients create (the Stellar ↔ EVM zk light clients)");
 
@@ -507,6 +509,28 @@ fn register_on_stellar(
     )?;
 
     logger::ok("the Soroban router names its counterparty");
+
+    let transfer_app = required(&cfg.evm.stellar_transfer, "STELLAR_EVM_TRANSFER")?;
+
+    logger::step(&format!(
+        "set_client_encoding {stellar_client} → {SOLIDITY_ABI_ENCODING} (the EVM ICS-20 app decodes only ABI)"
+    ));
+
+    contracts::invoke_as(
+        &ContractsConfig::from(cfg),
+        root,
+        transfer_app,
+        &[
+            "set_client_encoding",
+            "--client_id",
+            stellar_client,
+            "--encoding",
+            SOLIDITY_ABI_ENCODING,
+        ],
+        &cfg.stellar.cli_identity,
+    )?;
+
+    logger::ok("the transfer app encodes this client's packets as Solidity ABI");
 
     Ok(())
 }

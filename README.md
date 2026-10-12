@@ -338,7 +338,10 @@ side it deploys the `SP1ICSStellar` creation code the proof API returns (genesis
 the latest archived ledger, the router as role manager) and registers it with
 `addClient` under `EVM_STELLAR_CLIENT_ID`, naming the Stellar client as its
 counterparty. `counterparty --evm` then registers `EVM_STELLAR_CLIENT_ID` as the
-Soroban client's counterparty.
+Soroban client's counterparty, and sets the Soroban transfer app to encode that
+client's packets as Solidity ABI (`set_client_encoding`): the EVM ICS-20 app rejects
+the JSON default with `ICS20UnexpectedEncoding`, answering with an error
+acknowledgement that refunds the sender.
 
 Pick a fresh `EVM_STELLAR_CLIENT_ID` whenever the Stellar side is a new router: its
 sequences restart at 1, and the EVM router still holds receipts for the old ones
