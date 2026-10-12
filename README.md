@@ -604,3 +604,7 @@ diffs `proto/` against a stack checkout.
 Image build + push is `ipsa services build` / `services push`, which resolve
 image refs from `.env` and clone the relayer source per `RELAYER_REPO_URL` /
 `RELAYER_BRANCH`.
+
+## License
+
+Copyright 2026 Amanda Gonsalves. Licensed under the [Apache License 2.0](LICENSE).
