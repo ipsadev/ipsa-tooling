@@ -102,6 +102,7 @@ chains:
         ics_26_router_address: '0x3f09B9D0E8453C91FBA256F8e2A39A7200D7604B'
         ics_20_transfer_address: '0x28b94Ea9eb1f91686AcEA5c46A1e9331E51CC7D4'
       log_lookback_blocks: 5000
+      gas_limit_multiplier: 2.5
     ibcv2:
       counterparty_chains: {}
       recv_batch_size: 1
