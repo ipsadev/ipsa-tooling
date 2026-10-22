@@ -138,7 +138,6 @@ mod tests {
         assert_eq!(archive_seconds(63), ARCHIVE_MARGIN_SECS);
     }
 
-    // The whole point: the old flat 300s expired before a full window could close.
     #[test]
     fn the_worst_case_window_outlasts_the_old_flat_default() {
         assert!(archive_seconds(64) > 300);

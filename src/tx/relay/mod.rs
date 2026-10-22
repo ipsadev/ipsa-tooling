@@ -214,9 +214,6 @@ async fn relay(
     Ok(())
 }
 
-// A cosmos tx broadcast in sync mode returns once it is in the mempool, so the
-// relayer can be asked for it before any block contains it. That reads as a
-// missing tx, not a pending one, which is why this waits rather than failing.
 const INCLUSION_WAIT: Duration = Duration::from_secs(90);
 
 const INCLUSION_POLL: Duration = Duration::from_secs(3);

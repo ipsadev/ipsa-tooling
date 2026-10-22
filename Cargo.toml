@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.81.0"
 license = "Apache-2.0"
-description = "Orchestrator CLI for the Stellar and Cosmos IBC bridge"
+description = "Orchestrator CLI for Stellar IBC v2 corridors"
 repository = "https://github.com/ipsadev/ipsa-tooling"
 
 [[bin]]

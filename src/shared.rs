@@ -9,7 +9,6 @@ pub enum Chain {
     Stellar,
     Cosmos,
     Evm,
-    Cardano,
     All,
 }
 
@@ -19,7 +18,6 @@ impl Chain {
             Self::Stellar => "stellar",
             Self::Cosmos => "cosmos",
             Self::Evm => "evm",
-            Self::Cardano => "cardano",
             Self::All => "all",
         }
     }
