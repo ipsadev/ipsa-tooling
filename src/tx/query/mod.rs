@@ -1,4 +1,3 @@
-use core::unimplemented;
 use std::path::Path;
 
 use anyhow::{bail, Result};
@@ -63,9 +62,6 @@ pub async fn get_clients(
         Chain::Stellar => {
             clients::stellar_clients(cfg, http, id).await;
         }
-        Chain::Cardano => {
-            unimplemented!()
-        }
         Chain::Evm => {
             logger::warn("client queries on the EVM side are not built yet");
         }
@@ -94,9 +90,6 @@ async fn balance_of(
                 }
                 Chain::Stellar => {
                     balances::stellar_balances(cfg, root, &address, denom);
-                }
-                Chain::Cardano => {
-                    unimplemented!()
                 }
                 Chain::Evm => {
                     logger::warn("balance queries on the EVM side are not built yet");

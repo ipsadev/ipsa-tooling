@@ -12,30 +12,26 @@ use crate::services::{
 
 pub enum ChainId {
     Cosmos(String),
-    #[allow(dead_code)]
-    Cardano(String),
     Stellar(String),
 }
 
 impl ChainId {
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Cosmos(id) | Self::Cardano(id) | Self::Stellar(id) => id,
+            Self::Cosmos(id) | Self::Stellar(id) => id,
         }
     }
 }
 
 pub enum ClientId {
     Cosmos(String),
-    #[allow(dead_code)]
-    Cardano(String),
     Stellar(String),
 }
 
 impl ClientId {
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Cosmos(id) | Self::Cardano(id) | Self::Stellar(id) => id,
+            Self::Cosmos(id) | Self::Stellar(id) => id,
         }
     }
 }
