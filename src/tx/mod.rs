@@ -90,6 +90,10 @@ pub enum ContractsTx {
         about = "Register the assets from ipsa/config/assets.json on the deployed transfer contract"
     )]
     RegisterAssets,
+    #[command(
+        about = "Upgrade deployed contracts in place to the wasm of the CONTRACTS_VERSION release"
+    )]
+    Upgrade(contracts::upgrade::UpgradeArgs),
 }
 
 #[derive(clap::Args)]
@@ -198,7 +202,7 @@ pub async fn run(cfg: &Config, root: &Path, http: &reqwest::Client, cmd: TxCmd) 
         TxCmd::Clients { cmd } => clients_tx(cfg, root, http, cmd).await,
         TxCmd::Contracts { cmd } => contracts_tx(cfg, root, http, cmd).await,
         TxCmd::Transfer(args) => transfer_tx(cfg, root, http, args).await,
-        TxCmd::Gmp { cmd } => gmp::run(cfg, root, cmd),
+        TxCmd::Gmp { cmd } => gmp::run(cfg, root, http, cmd).await,
         TxCmd::Relay(args) => relay::run(cfg, http, args).await,
         TxCmd::Query(args) => query_tx(cfg, root, http, args).await,
     }
@@ -273,6 +277,7 @@ async fn contracts_tx(
 
             contracts::invoke(&cc, root, &args.id, &call)
         }
+        ContractsTx::Upgrade(args) => contracts::upgrade::run(cfg, root, args),
         ContractsTx::RegisterAssets => {
             if cfg.deployment.transfer_app.is_empty() {
                 bail!("TRANSFER_CONTRACT_ADDRESS is not set in .env — deploy the contracts with `ipsa tx contracts deploy --stellar`, which writes it");

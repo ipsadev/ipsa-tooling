@@ -233,6 +233,9 @@ pass through verbatim after `--`.
 ipsa tx contracts invoke --id CB2L... -- register_port --port_id transfer --app_address CASB...
 ```
 
+### `ipsa tx contracts upgrade [--router] [--transfer] [--gmp]`
+Uploads the named contracts' wasm from the `CONTRACTS_VERSION` release, verified against its checksums, and calls each contract's owner-only `upgrade`. The contracts keep their addresses, storage, clients and port registrations. GMP apps from before v0.1.2 have no `upgrade`; move the port with `ipsa tx gmp replace` instead.
+
 ### `ipsa tx transfer --from <addr> --to <addr> --amount <n> [--denom --timeout-secs --no-mint --relay --wait]`
 Originate an ICS-20 transfer. The source and destination chains are inferred from each address (`cosmos1…` → Cosmos, `0x…` → EVM, `G…`/`C…` → Stellar), and every direction between Stellar and the other two is wired. `--denom` defaults to `XLM`. The CLI checks only an address's shape, not a Cosmos address's checksum, so a malformed receiver reaches the counterparty and comes back as an error acknowledgement that refunds the sender.
 
@@ -306,6 +309,19 @@ Hands the transaction to the relayer under the corridor's chain ids —
 with `--wait`, follows its packets until the acknowledgement is back. The wait
 defaults to an hour: an EVM source waits for Ethereum finality, a Stellar source
 for its history-archive checkpoint, and each leg is proved on the Succinct network.
+
+### `ipsa tx gmp` — general message passing
+
+```sh
+ipsa tx gmp call --via-caller --receiver 0x… --evm-call "set(uint256)" --evm-args 42 --relay --wait
+ipsa tx gmp caller outcome --sequence 1 --returns uint256
+ipsa tx gmp account --evm --sender C…
+```
+
+- `call` sends a call through the Stellar GMP app. A `0x…` receiver defaults to `application/x-solidity-abi`, the encoding Ethereum's `ICS27GMP` requires, the client `STELLAR_EVM_CLIENT_ID` and a 6-hour timeout (held between 6 and 24 hours, as for transfers). `--evm-call` and `--evm-args` build the Solidity calldata; `--payload` takes raw hex instead. `--from` sends as a Stellar account; `--via-caller` sends through `ipsa-gmp-caller` so the outcome is recorded. `--relay --wait` hands the transaction to the relayer and follows it, as for transfers.
+- `caller deploy` deploys `ipsa-gmp-caller` from the `CONTRACTS_VERSION` release, owned by the deployer and bound to `GMP_CONTRACT_ADDRESS`, and writes `GMP_CALLER_ADDRESS`. `caller outcome --sequence N` reads what it recorded: pending, succeeded with the call's result (`--returns uint256` decodes it), failed with the universal error acknowledgement, or timed out.
+- `account --evm --sender <stellar address>` asks `ICS27GMP` (`EVM_ICS27_GMP`) for the account a Stellar sender's calls run as on the EVM chain, before anything is sent; the client defaults to `EVM_STELLAR_CLIENT_ID`. Without `--evm` it asks the Stellar GMP app, with `--client-id`.
+- `replace` deploys the release's GMP app, sets its account wasm, moves the router's `gmpport` to it with `reassign_port` and rewrites `GMP_CONTRACT_ADDRESS`. A caller is bound to its GMP app, so redeploy it afterwards.
 
 ### `ipsa tx relay … --direct`
 
