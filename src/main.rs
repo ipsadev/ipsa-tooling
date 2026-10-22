@@ -31,8 +31,8 @@ use crate::shared::{DownArgs, StartArgs, UpArgs};
 #[command(
     name = "ipsa",
     version,
-    about = "Orchestrator for the Stellar<->Cosmos IBC v2 bridge",
-    long_about = "A caribic-style orchestrator for the Stellar<->Cosmos bridge: ops \
+    about = "Orchestrator for Stellar IBC v2 corridors",
+    long_about = "A caribic-style orchestrator for Stellar IBC v2 corridors (Cosmos and EVM): ops \
 (install/check/status/up/down/start), tx (clients/contracts/transfer writes), query + balances (reads), and the cosmos/gateway/api service groups. Drives docker, the stellar CLI, and the api directly — no shell scripts.",
     propagate_version = true
 )]

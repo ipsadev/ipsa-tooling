@@ -54,8 +54,6 @@ pub fn ensure(cfg: &Config, root: &Path) -> Result<()> {
 
     logger::ok("relayer.yml names the deployed router and routes both client ids");
 
-    // The relayer parses that file once, at startup. Creating clients earlier in
-    // the run rewrites it under a process that has already read the old table.
     if !RESTARTED.swap(true, Ordering::SeqCst) {
         crate::services::restart(root, &[crate::services::Service::Relayer])?;
     }
@@ -96,7 +94,6 @@ mod tests {
         assert!(!names_client(CONFIG, "08-wasm-17"));
     }
 
-    // 08-wasm-2 is a prefix of 08-wasm-20, and routing one is not routing the other.
     #[test]
     fn a_prefix_of_a_listed_client_does_not_count() {
         assert!(!names_client(CONFIG, "08-wasm-20"));

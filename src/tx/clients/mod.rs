@@ -15,9 +15,6 @@ pub(crate) struct CreateSpec<'a> {
     pub result_env_var: &'a str,
 }
 
-// A new client id has to reach both files the stack reads it from: .env, which
-// every ipsa command loads, and relayer.yml, whose counterparty_chains table is
-// how the relayer maps a packet's source client to its destination chain.
 pub(crate) fn record(cfg: &ClientsConfig, spec: &CreateSpec<'_>, client_id: &str) -> Result<()> {
     shared::env_upsert(
         &crate::config::tooling_env(),

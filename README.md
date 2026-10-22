@@ -1,7 +1,7 @@
 # `ipsa` — Stellar↔counterparty IBC orchestrator CLI
 
 `ipsa` (binary **`ipsa`**) is the single entry point for the
-Stellar↔counterparty IBC v2 bridge. It brings the stack up, builds/pushes images,
+Stellar's IBC v2 corridors, to Cosmos chains and EVM chains. It brings the stack up, builds/pushes images,
 deploys the Soroban contracts, uploads the light client, creates clients,
 registers counterparties, and reports status — driving **docker**, the
 **`stellar`** CLI, and **`ipsa-api`** directly. There are no shell scripts.
@@ -120,7 +120,7 @@ Full start, from an empty `.env` to a corridor the relayer can carry both ways:
 5. provision the sender + receiver accounts
 6. store the light-client wasm on cosmos (gov store-code + vote)
 7. create the `07-tendermint` client on Stellar and the `08-wasm` client on
-   cosmos, routing both in `relayer.yml`
+   cosmos, routing both in `relayer.yml`. Every new client id is written to both `.env`, which every ipsa command loads, and `relayer.yml`, whose `counterparty_chains` table is how the relayer maps a packet's source client to its destination chain
 8. register each client as the other's counterparty
 9. pair the Stellar ↔ EVM corridor: when the two clients named by
    `STELLAR_EVM_CLIENT_ID` and `EVM_STELLAR_CLIENT_ID` do not already name each
@@ -234,14 +234,9 @@ ipsa tx contracts invoke --id CB2L... -- register_port --port_id transfer --app_
 ```
 
 ### `ipsa tx transfer --from <addr> --to <addr> --amount <n> [--denom --timeout-secs --no-mint --relay --wait]`
-Originate an ICS-20 transfer. The source/destination chain is inferred from each
-address (`cosmos1…` → counterparty, `G…`/`C…` → Stellar) and routed
-accordingly — Stellar→counterparty is wired, counterparty→Stellar is pending
-(M4). `--denom` defaults to
-`stake`.
+Originate an ICS-20 transfer. The source and destination chains are inferred from each address (`cosmos1…` → Cosmos, `0x…` → EVM, `G…`/`C…` → Stellar), and every direction between Stellar and the other two is wired. `--denom` defaults to `XLM`. The CLI checks only an address's shape, not a Cosmos address's checksum, so a malformed receiver reaches the counterparty and comes back as an error acknowledgement that refunds the sender.
 
-The transaction hash is printed on stdout (and nothing else is), so it can be
-captured: `HASH=$(ipsa tx transfer … | tail -1)`. Nothing relays that
+Progress is logged to stdout. Without `--relay`, the transaction hash is the last line, so it can be captured: `HASH=$(ipsa tx transfer … | tail -1)`. Nothing relays that
 transaction on its own — pass `--relay` to hand it straight to the relayer, or
 run `tx relay --tx <hash>` yourself afterwards.
 
@@ -257,6 +252,12 @@ chain is read off the hash case, and an ambiguous hash asks for the flag).
 completes or fails (`--timeout-secs`, `--interval-secs`). The call goes through
 `ipsa-api` (`POST /relay`, `GET /relay/status`), which owns the gRPC
 connection to the relayer.
+
+`STELLAR_API_URL` decides which api, and so which relayer: `http://127.0.0.1:8101` for the local stack, `https://api.ipsa.dev` for the hosted one. `.env` overrides the environment, so it has to be set there. The hosted load balancer accepts only TLS 1.3, which the CLI speaks through rustls.
+
+A Cosmos transaction broadcast in sync mode returns once it is in the mempool, before any block contains it, and the relayer would report it missing. So for a Cosmos source `tx relay` waits up to 90 seconds for the transaction to be included before handing it over.
+
+Without `--timeout-secs`, `--wait` sizes its wait from the watcher's view of the chain: a packet can only be proved once the history archive publishes its ledger's 64-ledger checkpoint, so the wait covers the ledgers left to the next checkpoint plus a 2-minute margin, or an hour for the EVM corridor.
 
 ```sh
 ipsa tx relay --tx <stellar-tx-hash> --stellar --wait
@@ -445,6 +446,8 @@ under Eureka; token transfer is ICS-20.
 | `ics20-relay` | relays a transfer each way — Stellar→counterparty in `XLM`, counterparty→Stellar in `stake` — and checks both are delivered and acknowledged |
 | `ics02-query` | checks the api `/health` + `/stellar/clients` reads and the counterparty `client_states` read |
 
+The relayer reads `relayer.yml` only at startup, and earlier flows add clients to it, so the routing check restarts the relayer once before it runs. It also checks that routing `08-wasm-2` does not count as routing `08-wasm-20`.
+
 The flow bodies live in `src/tests/` (one file per ICS). They run locally with
 `ipsa test`; CI does not run them.
 
@@ -482,16 +485,6 @@ Both build for the **host architecture only** — multi-arch (amd64 + arm64)
 manifests are published by the CD workflows (`api-cd` / `gateway-cd`), which
 build each arch on a native runner. Building amd64 locally on an arm64 host
 would cross-compile under QEMU, so it is intentionally left to CI.
-
----
-
-## `gateway` — gateway service
-
-| Command | What it does |
-|---|---|
-| `query` | direct gateway gRPC reads — *pending* |
-
-Container lifecycle lives under `services`.
 
 ---
 
