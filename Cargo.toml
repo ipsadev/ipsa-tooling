@@ -28,7 +28,7 @@ ibc-proto = { version = "0.52", default-features = false, features = [
 indicatif = "0.17.8"
 prost = "0.14"
 prost13 = { package = "prost", version = "0.13" }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2", "charset"] }
 serde_json = "1.0.150"
 sha2 = "0.10"
 stellar-strkey = "0.0.16"
