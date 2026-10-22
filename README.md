@@ -445,9 +445,8 @@ under Eureka; token transfer is ICS-20.
 | `ics20-relay` | relays a transfer each way — Stellar→counterparty in `XLM`, counterparty→Stellar in `stake` — and checks both are delivered and acknowledged |
 | `ics02-query` | checks the api `/health` + `/stellar/clients` reads and the counterparty `client_states` read |
 
-The flow bodies live in `src/tests/` (one file per ICS). CI runs them via the
-`ics-flows.yml` workflow — each ICS is a separate, independently re-runnable
-step.
+The flow bodies live in `src/tests/` (one file per ICS). They run locally with
+`ipsa test`; CI does not run them.
 
 ---
 
