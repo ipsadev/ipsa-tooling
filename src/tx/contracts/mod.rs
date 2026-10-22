@@ -1,6 +1,7 @@
 pub mod config;
 pub mod deploy_all;
 pub mod release;
+pub mod upgrade;
 pub mod upload;
 pub mod wasm;
 
