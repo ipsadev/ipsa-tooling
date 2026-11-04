@@ -366,6 +366,33 @@ fn prepare_testnet_proposal(root: &Path, from: Option<&str>) -> Result<()> {
         .with_context(|| format!("writing {}", proposal_path.display()))?;
     logger::ok(&format!("wrote {}", proposal_path.display()));
 
+    submit_testnet_proposal(root, from, &testnet, &proposal_path)?;
+
+    let rpc = testnet.rpc_url.as_str();
+
+    println!();
+    logger::step("it must pass governance, then confirm + wire it up:");
+    println!("  gaiad query ibc-wasm checksums --node {rpc}");
+    logger::step(&format!(
+        "set it in .env:  LIGHT_CLIENT_WASM_CHECKSUM={sha}"
+    ));
+
+    if let Some(faucet) = &testnet.faucet_url {
+        logger::hint(&format!("fund your key first via the faucet: {faucet}"));
+    }
+    logger::warn(
+        "provider is ibc-go v10 / wasmvm 2.x — confirm the wasm + 08-wasm ABI before spending on the proposal",
+    );
+
+    Ok(())
+}
+
+fn submit_testnet_proposal(
+    root: &Path,
+    from: Option<&str>,
+    testnet: &crate::services::cosmos::config::CosmosConfig,
+    proposal_path: &Path,
+) -> Result<()> {
     let rpc = testnet.rpc_url.as_str();
     let chain_id = testnet.chain_id.as_str();
     let keyring = crate::config::get("COSMOS_TESTNET_KEYRING_BACKEND", "test");
@@ -410,21 +437,224 @@ fn prepare_testnet_proposal(root: &Path, from: Option<&str>) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+const UPGRADE_METADATA_FILE: &str = "provider-upgrade-metadata.json";
+
+pub async fn migrate_testnet(
+    root: &Path,
+    http: &reqwest::Client,
+    client: Option<&str>,
+    from: Option<&str>,
+) -> Result<()> {
+    logger::banner(
+        "contracts upgrade --cosmos --testnet (08-wasm store-code and migrate gov proposal)",
+    );
+
+    let testnet = crate::services::cosmos::config::CosmosConfig::testnet();
+    let client_id = match client {
+        Some(id) => id.to_string(),
+        None => crate::config::required("COSMOS_TESTNET_STELLAR_CLIENT_ID")?,
+    };
+    let (bytes, sha) = build_wasm(root)?;
+    let release = Release::from_env()?;
+    let authority = crate::config::get("COSMOS_TESTNET_GOV_AUTHORITY", GOV_AUTHORITY);
+
+    let current = client_checksum(http, &testnet.rest_url, &client_id).await?;
+    logger::detail(&format!("{client_id} runs {current}"));
+
+    if current.eq_ignore_ascii_case(&sha) {
+        logger::ok(&format!(
+            "{client_id} already runs {sha}, nothing to migrate"
+        ));
+
+        return Ok(());
+    }
+
+    let stored = stored_checksums(http, &testnet.rest_url).await?;
+    let already_stored = stored
+        .iter()
+        .any(|checksum| checksum.eq_ignore_ascii_case(&sha));
+
+    let store_msg = serde_json::json!({
+        "@type": "/ibc.lightclients.wasm.v1.MsgStoreCode",
+        "signer": authority,
+        "wasm_byte_code": base64::engine::general_purpose::STANDARD.encode(&bytes),
+    });
+    let migrate_msg = serde_json::json!({
+        "@type": "/ibc.lightclients.wasm.v1.MsgMigrateContract",
+        "signer": authority,
+        "client_id": client_id,
+        "checksum": base64::engine::general_purpose::STANDARD.encode(hex::decode(&sha)?),
+        "msg": base64::engine::general_purpose::STANDARD.encode(b"{}"),
+    });
+
+    let messages = if already_stored {
+        logger::detail(&format!(
+            "{sha} is already stored, so the proposal only migrates"
+        ));
+
+        vec![migrate_msg.clone()]
+    } else {
+        vec![store_msg.clone(), migrate_msg.clone()]
+    };
+
+    let title = format!("Migrate the Stellar (SCP) light client to {}", release.tag);
+    let summary = migration_summary(&sha, &current, &client_id, &release, already_stored);
+    let release_url = format!(
+        "https://github.com/{}/releases/tag/{}",
+        release.repository, release.tag
+    );
+    let metadata_url = crate::config::get(
+        "COSMOS_PROPOSAL_METADATA",
+        &format!(
+            "https://github.com/{}/releases/download/{}/{UPGRADE_METADATA_FILE}",
+            release.repository, release.tag
+        ),
+    );
+
+    let metadata = serde_json::json!({
+        "title": title,
+        "authors": ["ipsa"],
+        "summary": summary,
+        "details": format!("Release: {release_url}\nsha256 of the uncompressed wasm, as recorded on chain: {sha}\nClient migrated: {client_id}, from {current}"),
+        "proposal_forum_url": crate::config::get("COSMOS_PROPOSAL_FORUM_URL", &release_url),
+        "vote_option_context": format!("Yes stores the {} code and migrates {client_id} to it. The client keeps its id, state and counterparty.", release.tag),
+    });
+
+    let proposal = serde_json::json!({
+        "messages": messages,
+        "metadata": metadata_url,
+        "deposit": format!("{TESTNET_DEPOSIT_UATOM}uatom"),
+        "title": title,
+        "summary": summary,
+    });
+
+    let files = [
+        (UPGRADE_METADATA_FILE, metadata),
+        ("provider-store-code.json", unsigned_tx(store_msg)),
+        ("provider-migrate-contract.json", unsigned_tx(migrate_msg)),
+        ("provider-upgrade-proposal.json", proposal),
+    ];
+
+    for (name, content) in &files {
+        let path = root.join(name);
+
+        std::fs::write(
+            &path,
+            format!("{}\n", serde_json::to_string_pretty(content)?),
+        )
+        .with_context(|| format!("writing {}", path.display()))?;
+        logger::ok(&format!("wrote {}", path.display()));
+    }
+
+    logger::detail(&format!(
+        "for an authz holder, in order: gaiad tx authz exec provider-store-code.json then provider-migrate-contract.json --from <grantee>; the metadata must be published at {metadata_url}"
+    ));
+
+    submit_testnet_proposal(
+        root,
+        from,
+        &testnet,
+        &root.join("provider-upgrade-proposal.json"),
+    )?;
+
+    let rpc = testnet.rpc_url.as_str();
+
     println!();
-    logger::step("it must pass governance, then confirm + wire it up:");
-    println!("  gaiad query ibc-wasm checksums --node {rpc}");
+    logger::step("once it passes, confirm the client runs the new code:");
+    println!("  gaiad query ibc client state {client_id} --node {rpc}");
     logger::step(&format!(
         "set it in .env:  LIGHT_CLIENT_WASM_CHECKSUM={sha}"
     ));
 
-    if let Some(faucet) = &testnet.faucet_url {
-        logger::hint(&format!("fund your key first via the faucet: {faucet}"));
-    }
-    logger::warn(
-        "provider is ibc-go v10 / wasmvm 2.x — confirm the wasm + 08-wasm ABI before spending on the proposal",
-    );
-
     Ok(())
+}
+
+async fn stored_checksums(http: &reqwest::Client, rest: &str) -> Result<Vec<String>> {
+    let url = format!(
+        "{}/ibc/lightclients/wasm/v1/checksums",
+        rest.trim_end_matches('/')
+    );
+    let body: serde_json::Value = http
+        .get(&url)
+        .send()
+        .await
+        .with_context(|| format!("reading {url}"))?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    Ok(body
+        .get("checksums")
+        .and_then(|checksums| checksums.as_array())
+        .map(|checksums| {
+            checksums
+                .iter()
+                .filter_map(|checksum| checksum.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+async fn client_checksum(http: &reqwest::Client, rest: &str, client_id: &str) -> Result<String> {
+    let url = format!(
+        "{}/ibc/core/client/v1/client_states/{client_id}",
+        rest.trim_end_matches('/')
+    );
+    let body: serde_json::Value = http
+        .get(&url)
+        .send()
+        .await
+        .with_context(|| format!("reading {url}"))?
+        .error_for_status()
+        .with_context(|| format!("{client_id} is not a client on this chain"))?
+        .json()
+        .await?;
+    let checksum = body
+        .pointer("/client_state/checksum")
+        .and_then(|checksum| checksum.as_str())
+        .with_context(|| format!("{client_id} is not an 08-wasm client"))?;
+
+    Ok(hex::encode(
+        base64::engine::general_purpose::STANDARD.decode(checksum)?,
+    ))
+}
+
+fn migration_summary(
+    checksum: &str,
+    current: &str,
+    client_id: &str,
+    release: &Release,
+    already_stored: bool,
+) -> String {
+    let repository = &release.repository;
+    let tag = &release.tag;
+    let name = release.name();
+    let messages = if already_stored {
+        format!("1. MsgMigrateContract for {client_id} to checksum {checksum}, with the message {{}}. The code is already stored.")
+    } else {
+        format!("1. MsgStoreCode with the gzipped {tag} wasm.\n2. MsgMigrateContract for {client_id} to checksum {checksum}, with the message {{}}.")
+    };
+
+    format!(
+        "Stores {tag} of the Stellar light client and migrates the existing client {client_id} to it, so the client keeps following Stellar testnet after its Protocol 30 upgrade.\n\n\
+Stellar testnet moved to Protocol 30 at ledger 5540313 on 2026-11-03. Protocol 30 ledgers carry millisecond close times (CAP-88), which v0.1.0 cannot read, so {client_id} has not updated since ledger 5533483 and expires on 2026-11-17 if it stays there. {tag} reads them, with stellar-consensus-verifier 1.1.0, and accepts a ledger that closes in the same second as the previous one, which Protocol 30 allows.\n\n\
+The migration changes the code only. The client state, its pinned quorum configuration, its consensus states, the client id and its counterparty stay as they are, so transfers and the tokens already moved through {client_id} keep working. The contract's migrate entry point takes an empty message and changes no state.\n\n\
+Messages:\n\
+{messages}\n\n\
+Artifact: https://github.com/{repository}/releases/tag/{tag}\n\
+sha256 (uncompressed, as recorded on chain): {checksum}\n\
+Previous checksum of {client_id}: {current} (v0.1.0)\n\n\
+Reproduce it:\n\
+git clone --branch {tag} https://github.com/{repository}\n\
+cd {name}\n\
+./scripts/release-build.sh dist\n\
+cat dist/checksums.txt\n\n\
+This is a testnet request. The code has not yet had a third-party audit.\n\n\
+Runbook: https://github.com/{repository}/blob/{tag}/docs/ops/migrate.md"
+    )
 }
 
 fn resolve_testnet_key(root: &Path, from: Option<&str>, keyring: &str) -> Result<Option<String>> {

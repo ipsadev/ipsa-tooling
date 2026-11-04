@@ -277,7 +277,23 @@ async fn contracts_tx(
 
             contracts::invoke(&cc, root, &args.id, &call)
         }
-        ContractsTx::Upgrade(args) => contracts::upgrade::run(cfg, root, args),
+        ContractsTx::Upgrade(args) => {
+            if args.cosmos {
+                if !args.testnet {
+                    bail!("--cosmos migrates the public testnet's client; pass --testnet");
+                }
+
+                return contracts::wasm::migrate_testnet(
+                    root,
+                    http,
+                    args.client.as_deref(),
+                    args.from.as_deref(),
+                )
+                .await;
+            }
+
+            contracts::upgrade::run(cfg, root, args)
+        }
         ContractsTx::RegisterAssets => {
             if cfg.deployment.transfer_app.is_empty() {
                 bail!("TRANSFER_CONTRACT_ADDRESS is not set in .env — deploy the contracts with `ipsa tx contracts deploy --stellar`, which writes it");
