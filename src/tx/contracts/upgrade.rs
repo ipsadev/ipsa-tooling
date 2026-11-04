@@ -16,6 +16,32 @@ pub struct UpgradeArgs {
         help = "Upgrade the GMP app (GMP_CONTRACT_ADDRESS); apps from before v0.1.2 cannot be upgraded"
     )]
     pub gmp: bool,
+    #[arg(
+        long,
+        conflicts_with_all = ["router", "transfer", "gmp"],
+        help = "Migrate the Stellar light client on Cosmos to the LIGHT_CLIENT_VERSION release instead"
+    )]
+    pub cosmos: bool,
+    #[arg(
+        long,
+        requires = "cosmos",
+        help = "With --cosmos: write the migration for the public Cosmos testnet (authz exec files and a gov proposal)"
+    )]
+    pub testnet: bool,
+    #[arg(
+        long,
+        value_name = "CLIENT_ID",
+        requires = "testnet",
+        help = "With --testnet: the 08-wasm client to migrate (default: COSMOS_TESTNET_STELLAR_CLIENT_ID)"
+    )]
+    pub client: Option<String>,
+    #[arg(
+        long,
+        value_name = "KEY",
+        requires = "testnet",
+        help = "With --testnet: submit the gov proposal from this gaiad key"
+    )]
+    pub from: Option<String>,
 }
 
 pub fn run(cfg: &Config, root: &Path, args: UpgradeArgs) -> Result<()> {

@@ -9,5 +9,7 @@ target
 /stack/relayer-keys.json
 /stack/dist/
 /stack/provider-store-code*.json
+/stack/provider-migrate-contract.json
+/stack/provider-upgrade-*.json
 /stack/proof-api.pid
 /stack/proof-api.log

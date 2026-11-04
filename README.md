@@ -236,6 +236,15 @@ ipsa tx contracts invoke --id CB2L... -- register_port --port_id transfer --app_
 ### `ipsa tx contracts upgrade [--router] [--transfer] [--gmp]`
 Uploads the named contracts' wasm from the `CONTRACTS_VERSION` release, verified against its checksums, and calls each contract's owner-only `upgrade`. The contracts keep their addresses, storage, clients and port registrations. GMP apps from before v0.1.2 have no `upgrade`; move the port with `ipsa tx gmp replace` instead.
 
+### `ipsa tx contracts upgrade --cosmos --testnet [--client <id>] [--from <key>]`
+Migrates the Stellar light client on the public Cosmos testnet to the `LIGHT_CLIENT_VERSION` release, keeping the client's id, state and counterparty. It downloads the release and verifies its checksums, reads the checksum the client runs (`--client`, default `COSMOS_TESTNET_STELLAR_CLIENT_ID`) and stops if it already runs the release, and checks whether the code is already stored, in which case the store message is left out, since a second `MsgStoreCode` would fail the whole proposal. It writes, under `stack/`:
+
+- `provider-store-code.json` and `provider-migrate-contract.json`: unsigned transactions for an authz holder of the `08-wasm` authority, run in that order with `gaiad tx authz exec <file> --from <grantee>`
+- `provider-upgrade-proposal.json`: the same messages as one governance proposal, with the minimum initial deposit
+- `provider-upgrade-metadata.json`: the proposal's metadata, to publish at the URL the proposal names (by default the release's assets; `COSMOS_PROPOSAL_METADATA` overrides it)
+
+With `--from` or `COSMOS_TESTNET_MNEMONIC` it submits the proposal through `gaiad`. The proposal enters its deposit period with 50 of the 500 ATOM it needs, so add the rest with `gaiad tx gov deposit <id> 450000000uatom` when the validators can vote within the hour that follows; a vote that misses quorum burns the deposit. The summary describes the Protocol 30 migration to v0.2.0, the one it was written for.
+
 ### `ipsa tx transfer --from <addr> --to <addr> --amount <n> [--denom --timeout-secs --no-mint --relay --wait]`
 Originate an ICS-20 transfer. The source and destination chains are inferred from each address (`cosmos1…` → Cosmos, `0x…` → EVM, `G…`/`C…` → Stellar), and every direction between Stellar and the other two is wired. `--denom` defaults to `XLM`. The CLI checks only an address's shape, not a Cosmos address's checksum, so a malformed receiver reaches the counterparty and comes back as an error acknowledgement that refunds the sender.
 
