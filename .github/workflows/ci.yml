@@ -37,11 +37,6 @@ jobs:
       - name: setup just
         uses: extractions/setup-just@v3
 
-      - name: install protoc
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y protobuf-compiler
-
       - name: cache cargo-audit binary
         id: cache-cargo-audit
         uses: actions/cache@v4

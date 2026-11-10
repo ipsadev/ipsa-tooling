@@ -1,23 +1,9 @@
-pub mod proto {
-    pub mod stellar {
-        #![allow(dead_code, clippy::doc_overindented_list_items)]
-
-        tonic::include_proto!("stellar.gateway.v1");
-    }
-
-    pub mod proofapi {
-        #![allow(dead_code, clippy::doc_overindented_list_items)]
-
-        tonic::include_proto!("proofapi");
-    }
-}
-
 mod trust_root;
 
 use std::collections::HashMap;
 
 use anyhow::{anyhow, Context, Result};
-use proto::{
+use ipsa::gateway::{
     proofapi::{
         proof_api_service_client::ProofApiServiceClient, CreateClientRequest, UpdateClientRequest,
     },

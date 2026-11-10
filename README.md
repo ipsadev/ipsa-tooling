@@ -622,15 +622,12 @@ ipsa/src/
     stellar/         stellar chain config
     gateway/         gRPC query · config
   tests/             ICS integration flows (ipsa test)
-proto/               gateway + proof-api service definitions, copied from
-                     the gateway; `just protos <stack>` proves they have not drifted
 scripts/             one-off operator scripts
 ```
 
 ## just
 
-`just ci` runs what CI runs: `fmt-check`, `lint`, `test`, `audit`. `audit` sets aside RUSTSEC-2026-0387, timing variability in `crypto-bigint` 0.5, which reaches the workspace only through the Soroban SDK's host and is fixed only in `crypto-bigint` 0.7; drop the exception once the SDK adopts it. `just protos <stack>`
-diffs `proto/` against a stack checkout.
+`just ci` runs what CI runs: `fmt-check`, `lint`, `test`, `audit`. `audit` sets aside RUSTSEC-2026-0387, timing variability in `crypto-bigint` 0.5, which reaches the workspace only through the Soroban SDK's host and is fixed only in `crypto-bigint` 0.7; drop the exception once the SDK adopts it. The gateway and proof API clients come from the [`ipsa`](https://crates.io/crates/ipsa) crate's `gateway` feature, so there is no proto copy to keep in step.
 
 Image build + push is `ipsa services build` / `services push`, which resolve
 image refs from `.env` and clone the relayer source per `RELAYER_REPO_URL` /

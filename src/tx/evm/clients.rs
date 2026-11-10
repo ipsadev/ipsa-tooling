@@ -9,11 +9,11 @@ use alloy::{
     sol_types::SolCall,
 };
 use anyhow::{anyhow, bail, Context, Result};
+use ipsa::gateway::proofapi::CreateClientRequest;
 use serde_json::Value;
 
 use crate::{
     config::Config,
-    gateway::proto::proofapi::CreateClientRequest,
     logger,
     services::relayer::wiring,
     shared, tools,
