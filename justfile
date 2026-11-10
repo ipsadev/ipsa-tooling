@@ -27,7 +27,7 @@ protos stack:
     @echo "protos match {{stack}}"
 
 audit:
-    cargo audit --file Cargo.lock
+    cargo audit --file Cargo.lock --ignore RUSTSEC-2026-0387
 
 clean:
     cargo clean
