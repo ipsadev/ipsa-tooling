@@ -640,7 +640,7 @@ scripts/             one-off operator scripts
 
 ## just
 
-`just ci` runs what CI runs: `fmt-check`, `lint`, `test`, `audit`. `just protos <stack>`
+`just ci` runs what CI runs: `fmt-check`, `lint`, `test`, `audit`. `audit` sets aside RUSTSEC-2026-0387, timing variability in `crypto-bigint` 0.5, which reaches the workspace only through the Soroban SDK's host and is fixed only in `crypto-bigint` 0.7; drop the exception once the SDK adopts it. `just protos <stack>`
 diffs `proto/` against a stack checkout.
 
 Image build + push is `ipsa services build` / `services push`, which resolve
