@@ -3,7 +3,7 @@ mod trust_root;
 use std::collections::HashMap;
 
 use anyhow::{anyhow, Context, Result};
-use proto::{
+use ipsa::gateway::{
     proofapi::{
         proof_api_service_client::ProofApiServiceClient, CreateClientRequest, UpdateClientRequest,
     },
