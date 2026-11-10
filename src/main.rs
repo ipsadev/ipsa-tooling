@@ -117,6 +117,9 @@ async fn main() -> Result<()> {
                 services::relayer::db::transfers(&cfg, &http, limit, status.as_deref()).await?
             }
             RelayerCmd::Summary => services::relayer::db::summary(&cfg, &http).await?,
+            RelayerCmd::Backfill { api_url, out } => {
+                services::relayer::backfill::backfill(&cfg, &http, api_url.as_deref(), &out).await?
+            }
         },
 
         Command::Test(args) => tests::run(root, &http, args).await?,

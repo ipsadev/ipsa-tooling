@@ -76,6 +76,7 @@ ipsa <group> <command> --help
 | `tx transfer` | `--from --to --amount [--denom --timeout-secs --no-mint]` (chain inferred from the addresses) |
 | `tx query` | `--clients [--stellar\|--cosmos] [--client-id]` · `--address [--denom]` (balance reads) |
 | `services` | `pull` · `up` · `restart` · `down` · `build` · `push` (`[--api\|--gateway\|--cosmos]`) |
+| `relayer` | `keys-import` · `transfers` · `summary` · `backfill [--api-url] [--out]` |
 | `gateway` | `query` |
 | `test` | `[--ics ics02-clients\|ics02-counterparty\|ics20-transfer\|ics20-relay\|ics02-query]` |
 
@@ -486,6 +487,27 @@ The relayer reads `relayer.yml` only at startup, and earlier flows add clients t
 
 The flow bodies live in `src/tests/` (one file per ICS). They run locally with
 `ipsa test`; CI does not run them.
+
+---
+
+## `relayer` — the relayer's keys and transfer records
+
+```sh
+ipsa relayer keys-import
+ipsa relayer transfers [--limit <n>] [--status <state>]
+ipsa relayer summary
+ipsa relayer backfill [--api-url <url>] [--out <file>]
+```
+
+`backfill` fills in what the relayer's `ibcv2_transfers` rows are missing: the application, the sender, the receiver, the amount and the denom. The relayer's own backfill reads source transactions from Soroban RPC and Ethereum receipts, which no longer have the older ones. The api reads them from Horizon, Ethereum logs and the Hub's REST API instead. `backfill` reads every transfer from the api's `/relay/transfers` (`STELLAR_API_URL`, or `--api-url`) and writes a SQL script, `relayer-backfill.sql` by default. It doesn't connect to the database itself.
+
+Each statement only fills a row whose amount is empty and never overwrites a value the relayer wrote, so running the script twice changes nothing. ICS-27 contract calls get their application set and no amount. The script runs in one transaction and ends by counting the transfers that now have an amount.
+
+To fill the staging database, generate the script from the staging api and run it with `psql` from inside the VPC, for example in a one-off ECS task:
+
+```sh
+ipsa relayer backfill --api-url https://api.ipsa.dev
+```
 
 ---
 
