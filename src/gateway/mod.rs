@@ -18,7 +18,9 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, Context, Result};
 use proto::{
-    proofapi::{proof_api_service_client::ProofApiServiceClient, CreateClientRequest},
+    proofapi::{
+        proof_api_service_client::ProofApiServiceClient, CreateClientRequest, UpdateClientRequest,
+    },
     stellar::{
         stellar_gateway_query_client::StellarGatewayQueryClient, QueryStellarClientParamsRequest,
         QueryStellarClientParamsResponse, QuorumConfig,
@@ -80,6 +82,27 @@ impl Gateway {
             .map_err(|status| anyhow!("gateway CreateClient failed: {status}"))?;
 
         Ok(response.into_inner().tx)
+    }
+
+    pub async fn update_client(
+        &self,
+        src_chain: &str,
+        dst_chain: &str,
+        dst_client_id: &str,
+    ) -> Result<(Vec<u8>, String)> {
+        let mut client = ProofApiServiceClient::new(self.channel().await?);
+
+        let response = client
+            .update_client(UpdateClientRequest {
+                src_chain: src_chain.to_string(),
+                dst_chain: dst_chain.to_string(),
+                dst_client_id: dst_client_id.to_string(),
+            })
+            .await
+            .map_err(|status| anyhow!("gateway UpdateClient failed: {}", status.message()))?
+            .into_inner();
+
+        Ok((response.tx, response.address))
     }
 
     pub async fn create_stellar_client_on_cosmos(

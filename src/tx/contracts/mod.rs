@@ -1,5 +1,6 @@
 pub mod config;
 pub mod deploy_all;
+pub mod migrate;
 pub mod release;
 pub mod upgrade;
 pub mod upload;
