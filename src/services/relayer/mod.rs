@@ -1,3 +1,4 @@
+pub mod backfill;
 pub mod config;
 pub mod db;
 pub mod keys;
@@ -18,4 +19,21 @@ pub enum RelayerCmd {
 
     #[command(about = "Count the relayer's transfers, relay requests and submissions by status")]
     Summary,
+
+    #[command(
+        about = "Write SQL that fills the relayer's missing transfer amounts, parties and applications from the api"
+    )]
+    Backfill {
+        #[arg(
+            long,
+            help = "Api to read the transfers from (default: STELLAR_API_URL)"
+        )]
+        api_url: Option<String>,
+        #[arg(
+            long,
+            default_value = "relayer-backfill.sql",
+            help = "Where to write the SQL script"
+        )]
+        out: std::path::PathBuf,
+    },
 }
