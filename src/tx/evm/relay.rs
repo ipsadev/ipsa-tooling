@@ -11,11 +11,11 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use anyhow::{anyhow, bail, Context, Result};
+use ipsa::gateway::proofapi::{proof_api_service_client::ProofApiServiceClient, RelayByTxRequest};
 use tonic::transport::Endpoint;
 
 use crate::{
     config::Config,
-    gateway::proto::proofapi::{proof_api_service_client::ProofApiServiceClient, RelayByTxRequest},
     logger,
     tx::{
         contracts::config::ContractsConfig,

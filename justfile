@@ -21,11 +21,6 @@ test:
     cargo test --locked
 
 # proto/ is copied from the gateway; pass the stack checkout to prove it has not drifted
-protos stack:
-    diff -u {{stack}}/crates/gateway/proto/stellar_gateway.proto proto/stellar_gateway.proto
-    diff -u {{stack}}/crates/gateway/proto/proofapi.proto proto/proofapi.proto
-    @echo "protos match {{stack}}"
-
 audit:
     cargo audit --file Cargo.lock --ignore RUSTSEC-2026-0387
 
