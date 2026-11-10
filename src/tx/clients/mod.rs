@@ -2,6 +2,7 @@ pub mod config;
 pub mod cosmos;
 pub mod counterparty;
 pub mod stellar;
+pub mod update;
 
 use std::path::Path;
 

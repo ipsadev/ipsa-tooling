@@ -11,6 +11,23 @@ use crate::{config, logger, tools};
 const CHECKSUMS: &str = "SHA256SUMS";
 
 pub fn fetch(root: &Path) -> Result<PathBuf> {
+    let local = config::get("CONTRACTS_WASM_DIR", "");
+
+    if !local.is_empty() {
+        let directory = PathBuf::from(&local);
+
+        if !directory.is_dir() {
+            bail!("CONTRACTS_WASM_DIR={local} is not a directory");
+        }
+
+        logger::detail(&format!(
+            "contracts from CONTRACTS_WASM_DIR={} (a local build, not a release)",
+            directory.display()
+        ));
+
+        return Ok(directory);
+    }
+
     let repository = config::required("CONTRACTS_REPOSITORY")?;
     let tag = config::required("CONTRACTS_VERSION")?;
     let directory = root.join("dist/contracts").join(&tag);

@@ -56,6 +56,21 @@ pub enum ClientsTx {
         about = "Register the counterparty on Cosmos and/or Stellar (both when neither flag is given)"
     )]
     Counterparty(SideArgs),
+    #[command(
+        about = "Update the Cosmos client on Stellar to the latest Cosmos height, once or on an interval"
+    )]
+    Update(UpdateArgs),
+}
+
+#[derive(clap::Args)]
+pub struct UpdateArgs {
+    #[arg(
+        long,
+        help = "Client to update (default: the Cosmos client id in .env)"
+    )]
+    pub client: Option<String>,
+    #[arg(long, help = "Keep updating every this many seconds instead of once")]
+    pub every: Option<u64>,
 }
 
 #[derive(clap::Args)]
@@ -94,6 +109,19 @@ pub enum ContractsTx {
         about = "Upgrade deployed contracts in place to the wasm of the CONTRACTS_VERSION release"
     )]
     Upgrade(contracts::upgrade::UpgradeArgs),
+    #[command(
+        about = "Move a Tendermint client on Stellar to a freshly deployed light client, keeping its state"
+    )]
+    MigrateClient(MigrateClientArgs),
+}
+
+#[derive(clap::Args)]
+pub struct MigrateClientArgs {
+    #[arg(
+        long,
+        help = "Client to migrate (default: the Cosmos client id in .env)"
+    )]
+    pub client: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -237,6 +265,7 @@ async fn clients_tx(
                 Ok(())
             }
         },
+        ClientsTx::Update(args) => clients::update::run(cfg, root, args.client, args.every).await,
         ClientsTx::Counterparty(args) => match sides(args.cosmos, args.stellar) {
             Sides::Cosmos => clients::counterparty::run(cfg, &cc, root, http, "cosmos").await,
             Sides::Stellar => clients::counterparty::run(cfg, &cc, root, http, "stellar").await,
@@ -272,6 +301,7 @@ async fn contracts_tx(
                     .map(|_| ()),
             }
         }
+        ContractsTx::MigrateClient(args) => contracts::migrate::run(cfg, root, args.client),
         ContractsTx::Invoke(args) => {
             let call: Vec<&str> = args.call.iter().map(String::as_str).collect();
 

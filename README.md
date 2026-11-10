@@ -30,6 +30,9 @@ and the relayer and verifier sources live is read from `.env`, never built in.
   `dist/contracts/<tag>/` and every file is checked against the release's
   `SHA256SUMS` before anything is uploaded or deployed; a verified copy is reused.
   Run `gh auth login` first if the repository is private. Nothing is built locally.
+  To deploy a local build instead, set `CONTRACTS_WASM_DIR` to the folder that holds the wasm
+  (for example `ipsa-contracts/target/wasm32v1-none/contract`); it is used as is, without
+  `SHA256SUMS`, so use it for testnet work only.
   `tx contracts deploy --stellar` writes the addresses it deploys, and the
   router's genesis ledger, into `.env`. Commands that need an address fail with
   the variable name when it is missing.
@@ -68,8 +71,8 @@ ipsa <group> <command> --help
 |---|---|
 | ops | `install` · `check` · `up` · `down` · `start` |
 | `cosmos` | `start` · `stop` · `status` · `testnet [--balance <addr>]` |
-| `tx clients` | `create [--cosmos\|--stellar] [--force]` · `counterparty [--cosmos\|--stellar]` |
-| `tx contracts` | `upload` · `deploy [--stellar\|--cosmos] [--contract <name>] [--force] [--attestation]` · `invoke` |
+| `tx clients` | `create [--cosmos\|--stellar] [--force]` · `counterparty [--cosmos\|--stellar]` · `update [--client <id>] [--every <secs>]` |
+| `tx contracts` | `upload` · `deploy [--stellar\|--cosmos] [--contract <name>] [--force] [--attestation]` · `invoke` · `migrate-client [--client <id>]` |
 | `tx transfer` | `--from --to --amount [--denom --timeout-secs --no-mint]` (chain inferred from the addresses) |
 | `tx query` | `--clients [--stellar\|--cosmos] [--client-id]` · `--address [--denom]` (balance reads) |
 | `services` | `pull` · `up` · `restart` · `down` · `build` · `push` (`[--api\|--gateway\|--cosmos]`) |
@@ -212,6 +215,10 @@ Register the counterparty on the chosen side (IBC v2 `registerCounterparty`, no
 handshake); with neither flag, registers on both. The Stellar side goes through
 the gateway prepare→sign→submit path, the counterparty side through ibc-go.
 
+### `ipsa tx clients update [--client <id>] [--every <secs>]`
+
+Updates the Cosmos client on Stellar (default: the client id in `COSMOS_TESTNET_CLIENT_ID` or `COSMOS_CLIENT_ID`) to the latest Cosmos height. The gateway builds the `update_client` call (`UpdateClient`, Cosmos to Stellar). The command checks that it targets the router, then simulates, signs and sends it as `DEPLOYER_IDENTITY`. With `--every`, it repeats on that interval and logs a failed round instead of stopping. Submitting from the relayer's own account can collide with the relayer's transactions on the sequence number, and a collision just fails that round.
+
 ### `ipsa tx contracts upload`
 Build and upload (install) every Soroban contract wasm to the network, printing
 each wasm hash.
@@ -244,6 +251,10 @@ Migrates the Stellar light client on the public Cosmos testnet to the `LIGHT_CLI
 - `provider-upgrade-metadata.json`: the proposal's metadata, to publish at the URL the proposal names (by default the release's assets; `COSMOS_PROPOSAL_METADATA` overrides it)
 
 With `--from` or `COSMOS_TESTNET_MNEMONIC` it submits the proposal through `gaiad`. The proposal enters its deposit period with 50 of the 500 ATOM it needs, so add the rest with `gaiad tx gov deposit <id> 450000000uatom` when the validators can vote within the hour that follows; a vote that misses quorum burns the deposit. The summary describes the Protocol 30 migration to v0.2.0, the one it was written for.
+
+### `ipsa tx contracts migrate-client [--client <id>]`
+
+Moves a Tendermint client on Stellar to a freshly deployed `stellar_tendermint_light_client`, for when the light client's code changes. The light client has no `upgrade` of its own and only accepts `initialise` from its router. The command reads the client's latest height, client state and consensus state from its current light client (through the router's `light_client_address`), deploys the new light client with the router as its admin, and has the router owner (`DEPLOYER_IDENTITY`) call `migrate_client` with that state. It checks that the router now points at the new contract and records it as `TENDERMINT_LC_CONTRACT_ID`. Combine it with `CONTRACTS_WASM_DIR` to deploy a local build.
 
 ### `ipsa tx transfer --from <addr> --to <addr> --amount <n> [--denom --timeout-secs --no-mint --relay --wait]`
 Originate an ICS-20 transfer. The source and destination chains are inferred from each address (`cosmos1…` → Cosmos, `0x…` → EVM, `G…`/`C…` → Stellar), and every direction between Stellar and the other two is wired. `--denom` defaults to `XLM`. The CLI checks only an address's shape, not a Cosmos address's checksum, so a malformed receiver reaches the counterparty and comes back as an error acknowledgement that refunds the sender.
