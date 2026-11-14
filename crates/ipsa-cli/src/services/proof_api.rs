@@ -93,7 +93,6 @@ fn proof_api_config_path() -> String {
 }
 
 impl ProofApiConfig {
-
     fn directory(&self) -> Result<PathBuf> {
         if self.directory.is_empty() {
             bail!(
