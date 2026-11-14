@@ -115,6 +115,13 @@ pub async fn run(
         crate::accounts::provision(&cfg, root, false)?;
     }
 
+    if !args.skip_clients || !args.skip_relayer {
+        logger::step(
+            "ensuring stellar-proof-api is up (the cosmos corridor forwards recv proofs through it)",
+        );
+        ensure_proof_api(root)?;
+    }
+
     let created = if args.skip_clients {
         logger::detail("skip light-client wasm, clients and counterparties");
 
@@ -139,11 +146,7 @@ pub async fn run(
             "Step 8: creating the Stellar ↔ EVM clients and registering their counterparties",
         );
 
-        let proof_api = services::proof_api::ProofApiConfig::from_env()?;
-
-        if !services::proof_api::listening(&proof_api) {
-            services::proof_api::start(root, &proof_api)?;
-        }
+        ensure_proof_api(root)?;
 
         tx::evm::clients::ensure(&cfg, root).await.map_err(|error| {
             error.context("the EVM step failed — stellar-proof-api must be running for this router (PROOF_API_URL); pass --skip-evm to start without the EVM corridor")
@@ -171,6 +174,16 @@ pub async fn run(
 
     logger::ok("start complete");
     logger::hint("check: ipsa check   then: ipsa test --ics ics20-relay");
+
+    Ok(())
+}
+
+fn ensure_proof_api(root: &Path) -> Result<()> {
+    let proof_api = services::proof_api::ProofApiConfig::from_env()?;
+
+    if !services::proof_api::listening(&proof_api) {
+        services::proof_api::start(root, &proof_api)?;
+    }
 
     Ok(())
 }
