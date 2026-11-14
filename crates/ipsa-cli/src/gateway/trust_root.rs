@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
-use sha2::{Digest, Sha256};
-
 use ipsa::gateway::stellar::QuorumConfig;
+use sha2::{Digest, Sha256};
 
 pub fn verify_quorum_fingerprints(configs: &[QuorumConfig], pinned: &[String]) -> Result<()> {
     if pinned.is_empty() {

@@ -161,8 +161,16 @@ pub fn required(key: &str) -> Result<String> {
     Ok(value)
 }
 
+pub fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("ipsa-cli lives at <workspace root>/crates/ipsa-cli")
+        .to_path_buf()
+}
+
 pub fn tooling_env() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(".env")
+    workspace_root().join(".env")
 }
 
 pub fn load_tooling_env() {
