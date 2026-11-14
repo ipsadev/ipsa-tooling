@@ -15,7 +15,7 @@ pub fn stack_dir() -> PathBuf {
         return PathBuf::from(explicit.trim());
     }
 
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("stack")
+    crate::config::workspace_root().join("stack")
 }
 
 pub fn find_root() -> Result<PathBuf> {

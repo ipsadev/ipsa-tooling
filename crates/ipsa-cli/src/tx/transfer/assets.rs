@@ -18,7 +18,7 @@ pub struct AssetEntry {
 }
 
 pub fn load() -> Result<Vec<AssetEntry>> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(CONFIG_PATH);
+    let path = crate::config::workspace_root().join(CONFIG_PATH);
     let raw = std::fs::read_to_string(&path).unwrap_or_else(|error| {
         logger::warn(&format!(
             "no asset config at {} ({error}); falling back to {DEFAULT_ASSETS}",
