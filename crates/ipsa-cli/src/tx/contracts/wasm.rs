@@ -23,7 +23,7 @@ const FUND_AMOUNT: u64 = 100_000_000;
 const FUND_GAS_LIMIT: u64 = 200_000;
 const FUND_FEE_AMOUNT: u64 = 10_000;
 
-const FETCH_SCRIPT: &str = include_str!("../../../scripts/fetch-wasm.sh");
+const FETCH_SCRIPT: &str = include_str!("../../../../../scripts/fetch-wasm.sh");
 const GOV_AUTHORITY: &str = "cosmos10d07y265gmmuvt4z0w9aw880jnsr700j6zn9kn";
 const TESTNET_DEPOSIT_UATOM: u64 = 50_000_000;
 
