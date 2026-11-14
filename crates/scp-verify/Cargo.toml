@@ -23,7 +23,7 @@ serve = ["io", "dep:axum"]
 io = ["dep:tokio", "dep:futures"]
 
 [dependencies]
-scp-exporter = { path = "../scp-exporter" }
+scp-exporter = { path = "../scp-exporter", version = "0.1.0" }
 stellar-consensus-verifier = "2.1.0"
 clap = { version = "4.5", features = ["derive"], optional = true }
 axum = { version = "0.8", optional = true }
