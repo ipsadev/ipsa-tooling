@@ -261,9 +261,9 @@ fn build_one(cfg: &Config, root: &Path, service: Service, push: bool) -> Result<
             (format!("{repo}/Dockerfile.relayer"), repo)
         }
         Service::Verifier => {
-            let repo = verifier_repo(cfg, root)?;
+            let context = root.display().to_string();
 
-            (format!("{repo}/Dockerfile"), repo)
+            (format!("{context}/crates/scp-verify/Dockerfile"), context)
         }
         Service::Api
         | Service::Gateway
@@ -345,25 +345,6 @@ fn relayer_repo(cfg: &Config, root: &Path) -> Result<String> {
         &relayer.repo_url,
         &relayer.branch,
         "relayer",
-    )
-}
-
-fn verifier_repo(cfg: &Config, root: &Path) -> Result<String> {
-    let verifier = &cfg.verifier;
-
-    if verifier.repo_url.trim().is_empty() {
-        bail!(
-            "VERIFIER_REPO_URL is not set — add the verifier's git url to {} to build it",
-            crate::config::tooling_env().display()
-        );
-    }
-
-    checkout_repo(
-        root,
-        "verifier",
-        &verifier.repo_url,
-        &verifier.branch,
-        "verifier",
     )
 }
 

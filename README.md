@@ -537,7 +537,8 @@ and is rejected for build/push. The **relayer** is built from a separate
 repo: the CLI clones `RELAYER_REPO_URL` into `target/relayer` (or updates
 it), checks out `RELAYER_BRANCH`, then builds from there; with no
 `RELAYER_REPO_URL` it builds the local checkout at `RELAYER_CONTEXT`. The
-**verifier** is cloned the same way from `VERIFIER_REPO_URL` into `target/verifier`.
+**verifier** is built from the in-repo `crates/scp-verify` (its `Dockerfile`,
+with the workspace root as the build context) — no clone.
 
 Both build for the **host architecture only** — multi-arch (amd64 + arm64)
 manifests are published by the CD workflows (`api-cd` / `gateway-cd`), which
