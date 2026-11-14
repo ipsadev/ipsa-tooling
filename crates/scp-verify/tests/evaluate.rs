@@ -1,0 +1,474 @@
+use std::path::Path;
+
+use scp_verify::error::Verdict;
+use scp_verify::evaluate::{apply_mutation, core_must_reject, evaluate, NextSlot, MUTATIONS};
+use scp_verify::fixture::Fixture;
+use scp_verify::steps::{HeaderInput, QuorumConfig};
+use stellar_consensus_verifier::primitives::stellar::header::LedgerHeader;
+
+fn load() -> (HeaderInput, QuorumConfig, Vec<Vec<u8>>, Vec<u8>) {
+    let fixture = Fixture::load(Path::new("tests/fixtures/mainnet-63907880.json")).unwrap();
+    let (input, next) = fixture.to_input().unwrap();
+
+    let config = QuorumConfig::from_xdr(&input.quorum_sets_xdr[0]).unwrap();
+    let next = next.unwrap_or(scp_verify::fixture::NextSlot {
+        envelopes_xdr: Vec::new(),
+        quorum_sets_xdr: Vec::new(),
+        tx_set_xdr: Vec::new(),
+    });
+
+    (input, config, next.envelopes_xdr, next.tx_set_xdr)
+}
+
+fn run(
+    input: &HeaderInput,
+    config: &QuorumConfig,
+    mutation: Option<&str>,
+) -> scp_verify::evaluate::Report {
+    evaluate(input, config, None, mutation.map(str::to_string))
+}
+
+fn load_full(name: &str) -> (HeaderInput, QuorumConfig, scp_verify::fixture::NextSlot) {
+    let fixture = Fixture::load(&Path::new("tests/fixtures").join(format!("{name}.json"))).unwrap();
+    let (input, next) = fixture.to_input().unwrap();
+    let config = QuorumConfig::from_xdr(&input.quorum_sets_xdr[0]).unwrap();
+
+    (
+        input,
+        config,
+        next.expect("fixture carries slot N+1 evidence"),
+    )
+}
+
+const FULL_PATH_FIXTURES: [&str; 2] = ["testnet-4160279", "testnet-5541000-protocol-30"];
+
+#[test]
+fn a_clean_ledger_passes_every_archive_verifiable_step() {
+    let (input, config, _, _) = load();
+    let report = run(&input, &config, None);
+
+    assert!(
+        report.scp_verified,
+        "expected the consensus steps to pass, got {:?}",
+        report.steps
+    );
+    assert_eq!(report.ledger, 63_907_880);
+    assert_eq!(report.signers, 21);
+
+    for step in report.steps.iter().filter(|s| s.step <= 6) {
+        assert!(
+            step.passed,
+            "step {} did not pass: {:?}",
+            step.step, step.error
+        );
+    }
+}
+
+#[test]
+fn without_next_slot_evidence_a_clean_ledger_is_only_partial() {
+    let (input, config, _, _) = load();
+    let report = run(&input, &config, None);
+
+    assert!(report.scp_verified, "consensus should be verified");
+    assert!(
+        !report.header_authenticated,
+        "the header is not authenticated without the slot N+1 binding"
+    );
+    assert!(
+        !report.verified,
+        "verified must not be true when the header was never authenticated"
+    );
+    assert_eq!(report.verdict, Verdict::VerifiedPartial);
+    assert!(
+        report.next_slot_unavailable.is_none(),
+        "the library leaves the boundary-fetch reason for the server to set"
+    );
+}
+
+#[test]
+fn the_report_names_every_step_in_order() {
+    let (input, config, _, _) = load();
+    let report = run(&input, &config, None);
+
+    let numbers: Vec<usize> = report.steps.iter().map(|s| s.step).collect();
+    assert_eq!(numbers, vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
+}
+
+#[test]
+fn a_clean_ledger_reports_its_hash() {
+    let (input, config, _, _) = load();
+    let report = run(&input, &config, None);
+
+    assert_eq!(
+        report.ledger_hash.as_deref(),
+        Some("57f1147d7b800c956df0ed72425bf0fa474ddc22cff06ba901dbc76e82f29fd6")
+    );
+}
+
+#[test]
+fn every_mutation_fails_the_step_it_targets() {
+    let (input, config, next_envelopes, next_tx_set) = load();
+
+    for (name, expected_step) in MUTATIONS {
+        if name == "tampered-result-pairs" && input.result_pairs_xdr.is_empty() {
+            assert!(
+                apply_mutation(name, &input).is_err(),
+                "{name} must refuse when the ledger carries no results"
+            );
+            continue;
+        }
+
+        if name == "malicious-archive" && next_tx_set.is_empty() {
+            continue;
+        }
+
+        let mutated = apply_mutation(name, &input).unwrap();
+        let config = mutated.config.clone().unwrap_or_else(|| config.clone());
+
+        let report = if name == "malicious-archive" {
+            evaluate(
+                &mutated.input,
+                &config,
+                Some(NextSlot {
+                    envelopes_xdr: &next_envelopes,
+                    quorum_sets_xdr: &input.quorum_sets_xdr,
+                    tx_set_xdr: &next_tx_set,
+                }),
+                Some(name.to_string()),
+            )
+        } else {
+            run(&mutated.input, &config, Some(name))
+        };
+
+        assert!(!report.verified, "{name} was accepted");
+
+        let reimpl_failing: Vec<&scp_verify::evaluate::StepResult> = report
+            .steps
+            .iter()
+            .filter(|s| s.step >= 1 && !s.passed && !s.skipped)
+            .collect();
+
+        assert_eq!(
+            reimpl_failing.len(),
+            1,
+            "{name} failed {} reimplementation steps",
+            reimpl_failing.len()
+        );
+        assert_eq!(
+            reimpl_failing[0].name, expected_step,
+            "{name} failed the wrong step"
+        );
+        assert!(
+            reimpl_failing[0].error.is_some(),
+            "{name} reported no error"
+        );
+
+        assert!(
+            report.steps.iter().any(|s| s.step == 0),
+            "{name}: the report records the core acceptance step"
+        );
+    }
+}
+
+#[test]
+fn core_rejects_consensus_and_header_tampering() {
+    let (input, config, _, _) = load();
+
+    for name in ["tampered-signature", "wrong-network", "wrong-scp-value"] {
+        let mutated = apply_mutation(name, &input).unwrap();
+        let report = run(&mutated.input, &config, Some(name));
+
+        let core = report
+            .steps
+            .iter()
+            .find(|s| s.step == 0)
+            .expect("the report records the core acceptance step");
+
+        assert!(
+            !core.passed,
+            "{name}: core's verify_update must reject consensus or header tampering"
+        );
+        assert!(!report.verified, "{name} was accepted");
+    }
+}
+
+#[test]
+fn the_recomputed_hash_attack_is_only_caught_by_the_next_slot_binding() {
+    let (input, config, next_envelopes, next_tx_set) = load();
+    let mutated = apply_mutation("malicious-archive", &input).unwrap();
+
+    let without = run(&mutated.input, &config, None);
+
+    assert!(without.scp_verified, "the consensus steps still pass");
+    for step in without.steps.iter().filter(|s| s.step <= 6) {
+        assert!(
+            step.passed,
+            "step {} should pass on the recomputed recorded hash: {:?}",
+            step.step, step.error
+        );
+    }
+    assert!(
+        !without.header_authenticated,
+        "the tampered bucketListHash is not authenticated without slot N+1 evidence"
+    );
+    assert!(!without.verified);
+    assert_eq!(without.verdict, Verdict::VerifiedPartial);
+
+    if next_tx_set.is_empty() {
+        return;
+    }
+
+    let with = evaluate(
+        &mutated.input,
+        &config,
+        Some(NextSlot {
+            envelopes_xdr: &next_envelopes,
+            quorum_sets_xdr: &input.quorum_sets_xdr,
+            tx_set_xdr: &next_tx_set,
+        }),
+        Some("malicious-archive".to_string()),
+    );
+    let seven = with.steps.iter().find(|s| s.step == 7).unwrap();
+
+    assert!(
+        !seven.passed && !seven.skipped,
+        "the slot N+1 binding must catch the tampered header: {seven:?}"
+    );
+    assert!(!with.verified);
+}
+
+#[test]
+fn a_mutation_stops_the_run_at_the_failing_step() {
+    let (input, config, _, _) = load();
+    let mutated = apply_mutation("tampered-signature", &input).unwrap();
+    let report = run(&mutated.input, &config, Some("tampered-signature"));
+
+    let reimplementation: Vec<&scp_verify::evaluate::StepResult> =
+        report.steps.iter().filter(|s| s.step >= 1).collect();
+
+    assert_eq!(reimplementation.len(), 1);
+    assert_eq!(reimplementation[0].step, 1);
+}
+
+#[test]
+fn every_mutation_on_the_full_path_is_caught_and_reported_consistently() {
+    for fixture in FULL_PATH_FIXTURES {
+        let (input, config, next) = load_full(fixture);
+
+        for (name, expected_step) in MUTATIONS {
+            if name == "tampered-result-pairs" && input.result_pairs_xdr.is_empty() {
+                continue;
+            }
+
+            let mutated = apply_mutation(name, &input).unwrap();
+            let config = mutated.config.clone().unwrap_or_else(|| config.clone());
+
+            let report = evaluate(
+                &mutated.input,
+                &config,
+                Some(NextSlot {
+                    envelopes_xdr: &next.envelopes_xdr,
+                    quorum_sets_xdr: &next.quorum_sets_xdr,
+                    tx_set_xdr: &next.tx_set_xdr,
+                }),
+                Some(name.to_string()),
+            );
+
+            assert!(
+                !report.verified,
+                "{fixture}/{name}: a run with a failing step must not report verified"
+            );
+
+            let core = report
+                .steps
+                .iter()
+                .find(|s| s.step == 0)
+                .expect("the report records the core acceptance step");
+
+            if core_must_reject(name) {
+                assert!(
+                    !core.passed,
+                    "{fixture}/{name}: core's verify_update must reject this attack"
+                );
+            } else {
+                assert!(
+                    core.passed,
+                    "{fixture}/{name}: core accepts this; ipsa's strict check catches it"
+                );
+                assert!(
+                    report.strict_check_failed,
+                    "{fixture}/{name}: the strict-check failure is not flagged"
+                );
+            }
+
+            assert!(
+                report
+                    .steps
+                    .iter()
+                    .any(|s| s.step >= 1 && s.name == expected_step && !s.passed && !s.skipped),
+                "{fixture}/{name}: the targeted step {expected_step} did not fail"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_clean_ledger_on_the_full_path_is_fully_verified() {
+    for fixture in FULL_PATH_FIXTURES {
+        let (input, config, next) = load_full(fixture);
+
+        let report = evaluate(
+            &input,
+            &config,
+            Some(NextSlot {
+                envelopes_xdr: &next.envelopes_xdr,
+                quorum_sets_xdr: &next.quorum_sets_xdr,
+                tx_set_xdr: &next.tx_set_xdr,
+            }),
+            None,
+        );
+
+        assert!(
+            report.verified,
+            "{fixture}: expected a clean full verify: {:?}",
+            report.steps
+        );
+        assert!(
+            report.header_authenticated,
+            "{fixture}: the header should be authenticated end to end"
+        );
+        assert!(
+            !report.strict_check_failed,
+            "{fixture}: unexpected strict-check failure"
+        );
+    }
+}
+
+#[test]
+fn a_value_bound_run_is_never_anchored_even_with_a_matching_trusted_previous() {
+    let (mut input, config, _, _) = load();
+
+    let header = LedgerHeader::decode(&input.ledger_header_xdr).unwrap();
+    input.trusted_previous_hash = Some(header.previous_ledger_hash);
+
+    let report = run(&input, &config, None);
+
+    assert!(
+        !report.anchored,
+        "a value-bound run authenticates no parent link; previous_ledger_hash is unsigned"
+    );
+    assert_eq!(report.verdict, Verdict::VerifiedPartial);
+}
+
+#[test]
+fn an_unknown_mutation_is_rejected() {
+    let (input, _, _, _) = load();
+    assert!(apply_mutation("not-a-mutation", &input).is_err());
+}
+
+#[test]
+fn the_next_slot_step_is_skipped_without_evidence() {
+    let (input, config, _, _) = load();
+    let report = run(&input, &config, None);
+
+    let seven = report.steps.iter().find(|s| s.step == 7).unwrap();
+    assert!(seven.skipped);
+    assert!(seven.error.is_none());
+}
+
+#[test]
+fn the_next_slot_step_passes_with_real_evidence() {
+    let (input, config, next_envelopes, next_tx_set) = load();
+    if next_tx_set.is_empty() {
+        return;
+    }
+
+    let report = evaluate(
+        &input,
+        &config,
+        Some(NextSlot {
+            envelopes_xdr: &next_envelopes,
+            quorum_sets_xdr: &input.quorum_sets_xdr,
+            tx_set_xdr: &next_tx_set,
+        }),
+        None,
+    );
+
+    let seven = report.steps.iter().find(|s| s.step == 7).unwrap();
+    assert!(seven.passed, "step 7 failed: {:?}", seven.error);
+}
+
+#[test]
+fn the_wrong_statement_type_mutation_reaches_the_externalize_check() {
+    let (input, config, _, _) = load();
+    let mutated = apply_mutation("wrong-statement-type", &input).unwrap();
+    let report = run(&mutated.input, &config, Some("wrong-statement-type"));
+    let one = report.steps.iter().find(|s| s.step == 1).unwrap();
+    let error = one.error.as_deref().unwrap_or_default();
+
+    assert!(
+        error.contains("not EXTERNALIZE"),
+        "expected the statement-type check, got {error}"
+    );
+}
+
+#[test]
+fn a_bad_signature_is_invalid_evidence_not_a_contradiction() {
+    let (input, config, _, _) = load();
+    let mutated = apply_mutation("tampered-signature", &input).unwrap();
+    let report = run(&mutated.input, &config, Some("tampered-signature"));
+
+    assert_eq!(report.verdict, Verdict::InvalidEvidence);
+}
+
+#[tokio::test]
+async fn the_next_slot_is_checked_against_its_own_quorum_sets() {
+    use scp_exporter::network::Network;
+    use scp_verify::sweep;
+
+    let archive = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/archive/testnet")
+        .display()
+        .to_string();
+    let options = sweep::Options {
+        network: Network::Testnet,
+        archives: vec![archive],
+        from: 4_289_984,
+        to: 4_289_984,
+        next_slot: false,
+        results: false,
+        trust_root_xdr: None,
+        jsonl: None,
+    };
+    let loaded = sweep::load_checkpoint(4_290_047, &options, false)
+        .await
+        .unwrap();
+    let slot = &loaded.slots[&4_289_984];
+    let following = &loaded.slots[&4_289_985];
+    let input = HeaderInput {
+        slot: 4_289_984,
+        network_id: Network::Testnet.id(),
+        ledger_header_xdr: loaded.headers[&4_289_984].header_xdr.clone(),
+        envelopes_xdr: slot.externalize_xdr.clone(),
+        quorum_sets_xdr: slot.quorum_sets_xdr.clone(),
+        ..HeaderInput::default()
+    };
+    let config = QuorumConfig::from_xdr(&slot.quorum_sets_xdr[0]).unwrap();
+    let report = evaluate(
+        &input,
+        &config,
+        Some(NextSlot {
+            envelopes_xdr: &following.externalize_xdr,
+            quorum_sets_xdr: &[],
+            tx_set_xdr: &[0u8; 4],
+        }),
+        None,
+    );
+    let seven = report.steps.iter().find(|s| s.step == 7).unwrap();
+    let error = seven.error.as_deref().unwrap_or_default();
+
+    assert!(
+        error.contains("no quorum-set preimage"),
+        "slot N+1 borrowed slot N's quorum sets: {error}"
+    );
+}
