@@ -63,10 +63,7 @@ impl ProofApiConfig {
         Ok(Self {
             directory: get("PROOF_API_DIR", ""),
             binary: get("PROOF_API_BINARY", "target/release/stellar-proof-api"),
-            config: get(
-                "PROOF_API_CONFIG",
-                "programs/stellar-proof-api/testnet.json",
-            ),
+            config: proof_api_config_path(),
             env_file: get("PROOF_API_ENV_FILE", ".env"),
             host,
             port,
@@ -76,6 +73,26 @@ impl ProofApiConfig {
     fn address(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
+}
+
+fn proof_api_config_path() -> String {
+    let explicit = get("PROOF_API_CONFIG", "");
+
+    if !explicit.is_empty() {
+        return explicit;
+    }
+
+    if CosmosConfig::from_env().is_local() {
+        return crate::repo::stack_dir()
+            .join("proof-api.devnet.json")
+            .to_string_lossy()
+            .into_owned();
+    }
+
+    "programs/stellar-proof-api/testnet.json".to_string()
+}
+
+impl ProofApiConfig {
 
     fn directory(&self) -> Result<PathBuf> {
         if self.directory.is_empty() {

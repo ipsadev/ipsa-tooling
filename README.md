@@ -139,6 +139,22 @@ Full start, from an empty `.env` to a corridor the relayer can carry both ways:
 10. import the relayer keys, start postgres, and start the relayer, recreating
    it when `relayer.yml` changed
 
+The Cosmos corridor forwards its recv proofs through `stellar-proof-api` too, so
+`ipsa start` starts the proof-api before it creates the cosmos clients (step 6),
+whenever the clients or the relayer will run, independent of `--skip-evm`. On
+devnet (`COSMOS_NETWORK=devnet`) it uses `stack/proof-api.devnet.json`, a
+forward-only config with no SP1 prover keys.
+
+Which services each corridor needs:
+
+| Corridor | Services it starts |
+|---|---|
+| Stellar ↔ Cosmos | cosmos, stellar-watcher, api, gateway, postgres, relayer, and stellar-proof-api (forward modules only) |
+| Stellar ↔ EVM | api, gateway, relayer, and stellar-proof-api (SP1 proving modules) |
+
+The proof-api is shared: the Cosmos corridor uses only its forward modules (to the
+gateway), while the EVM corridor uses its SP1 proving modules.
+
 Every step is idempotent: a deployed router, a stored checksum and existing
 client ids are kept. Counterparties are only registered when a client was
 created in this run. When the contracts are redeployed, the clients are
@@ -169,8 +185,12 @@ to the gateway. It runs on the host, not in the stack, from its own checkout
 | `status` | whether it listens, and its pid |
 
 Output goes to `stack/proof-api.log`. A process started by hand is found by its
-port, so `restart` takes it over. `ipsa start` runs `start` before the EVM step
-when nothing is listening.
+port, so `restart` takes it over. `ipsa start` starts it whenever the cosmos or
+EVM corridor is active (before creating the cosmos clients), independent of
+`--skip-evm`, when nothing is already listening. On devnet `PROOF_API_CONFIG`
+defaults to `stack/proof-api.devnet.json` (forward only, no SP1 keys); on testnet
+it defaults to `programs/stellar-proof-api/testnet.json`. Set `PROOF_API_CONFIG`
+to override either.
 
 ## `cosmos` — local counterparty devnet
 
