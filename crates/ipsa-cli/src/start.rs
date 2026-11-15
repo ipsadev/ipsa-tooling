@@ -57,12 +57,13 @@ pub async fn run(
 
     services::up(root, &[Service::Cosmos, Service::Watcher])?;
 
-    logger::step("Step 2: ensuring api + gateway are up");
+    logger::step("Step 2: ensuring api + gateway are up on the current router");
     if deploy_contracts {
         logger::detail("force redeploy — deferring api + gateway startup to the contract step");
-    } else if probe::http_ok(http, &cfg.api_health_url()).await {
-        logger::ok("api already reachable");
     } else {
+        logger::detail(
+            "docker compose up recreates them when ROUTER_CONTRACT_ADDRESS changed, so a redeploy from another run cannot leave them on a stale router",
+        );
         tools::docker::compose(root, &["up", "-d", "ipsa-api", "ipsa-gateway"])?;
 
         if !probe::wait_http(http, &cfg.api_health_url(), WAIT_TIMEOUT_SECS).await {
@@ -71,7 +72,7 @@ pub async fn run(
             );
         }
 
-        logger::ok("api + gateway reachable");
+        logger::ok("api + gateway reachable on the current router");
     }
 
     logger::step("Step 3: deploying Soroban contracts");
@@ -115,11 +116,13 @@ pub async fn run(
         crate::accounts::provision(&cfg, root, false)?;
     }
 
+    let evm_active = !args.skip_clients && !args.skip_evm;
+
     if !args.skip_clients || !args.skip_relayer {
         logger::step(
             "ensuring stellar-proof-api is up (the cosmos corridor forwards recv proofs through it)",
         );
-        ensure_proof_api(root)?;
+        ensure_proof_api(root, evm_active)?;
     }
 
     let created = if args.skip_clients {
@@ -146,7 +149,7 @@ pub async fn run(
             "Step 8: creating the Stellar ↔ EVM clients and registering their counterparties",
         );
 
-        ensure_proof_api(root)?;
+        ensure_proof_api(root, true)?;
 
         tx::evm::clients::ensure(&cfg, root).await.map_err(|error| {
             error.context("the EVM step failed — stellar-proof-api must be running for this router (PROOF_API_URL); pass --skip-evm to start without the EVM corridor")
@@ -178,8 +181,8 @@ pub async fn run(
     Ok(())
 }
 
-fn ensure_proof_api(root: &Path) -> Result<()> {
-    let proof_api = services::proof_api::ProofApiConfig::from_env()?;
+fn ensure_proof_api(root: &Path, evm: bool) -> Result<()> {
+    let proof_api = services::proof_api::ProofApiConfig::from_env(evm)?;
 
     if !services::proof_api::listening(&proof_api) {
         services::proof_api::start(root, &proof_api)?;

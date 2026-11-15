@@ -209,6 +209,7 @@ pub fn run(
 
     logger::step(&format!("writing deployed addresses to {}", env.display()));
     crate::shared::env_upsert(&env, &addresses)?;
+    crate::config::load_tooling_env();
 
     for (name, value) in addresses {
         logger::detail(&format!("{name}={value}"));

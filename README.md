@@ -141,9 +141,11 @@ Full start, from an empty `.env` to a corridor the relayer can carry both ways:
 
 The Cosmos corridor forwards its recv proofs through `stellar-proof-api` too, so
 `ipsa start` starts the proof-api before it creates the cosmos clients (step 6),
-whenever the clients or the relayer will run, independent of `--skip-evm`. On
-devnet (`COSMOS_NETWORK=devnet`) it uses `stack/proof-api.devnet.json`, a
-forward-only config with no SP1 prover keys.
+whenever the clients or the relayer will run, independent of `--skip-evm`. A
+cosmos-only devnet run (`--skip-evm` with `COSMOS_NETWORK=devnet`) uses
+`stack/proof-api.devnet.json`, a forward-only config with no SP1 prover keys. A
+run that includes the EVM corridor uses `programs/stellar-proof-api/testnet.json`,
+which carries both the forward modules and the SP1 proving modules.
 
 Which services each corridor needs:
 
@@ -187,10 +189,11 @@ to the gateway. It runs on the host, not in the stack, from its own checkout
 Output goes to `stack/proof-api.log`. A process started by hand is found by its
 port, so `restart` takes it over. `ipsa start` starts it whenever the cosmos or
 EVM corridor is active (before creating the cosmos clients), independent of
-`--skip-evm`, when nothing is already listening. On devnet `PROOF_API_CONFIG`
-defaults to `stack/proof-api.devnet.json` (forward only, no SP1 keys); on testnet
-it defaults to `programs/stellar-proof-api/testnet.json`. Set `PROOF_API_CONFIG`
-to override either.
+`--skip-evm`, when nothing is already listening. When the run includes the EVM
+corridor the config is `programs/stellar-proof-api/testnet.json` (forward plus SP1
+proving modules); a cosmos-only devnet run uses `stack/proof-api.devnet.json`
+(forward only, no SP1 keys), which is also the standalone `ipsa proof-api` default
+on devnet. Set `PROOF_API_CONFIG` to override.
 
 ## `cosmos` — local counterparty devnet
 
