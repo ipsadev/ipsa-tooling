@@ -48,7 +48,7 @@ pub struct ProofApiConfig {
 }
 
 impl ProofApiConfig {
-    pub fn from_env() -> Result<Self> {
+    pub fn from_env(evm: bool) -> Result<Self> {
         let url = get("PROOF_API_URL", "http://127.0.0.1:3100");
         let parsed = reqwest::Url::parse(&url)
             .with_context(|| format!("PROOF_API_URL ({url}) is not a URL"))?;
@@ -63,7 +63,7 @@ impl ProofApiConfig {
         Ok(Self {
             directory: get("PROOF_API_DIR", ""),
             binary: get("PROOF_API_BINARY", "target/release/stellar-proof-api"),
-            config: proof_api_config_path(),
+            config: proof_api_config_path(evm),
             env_file: get("PROOF_API_ENV_FILE", ".env"),
             host,
             port,
@@ -75,14 +75,14 @@ impl ProofApiConfig {
     }
 }
 
-fn proof_api_config_path() -> String {
+fn proof_api_config_path(evm: bool) -> String {
     let explicit = get("PROOF_API_CONFIG", "");
 
     if !explicit.is_empty() {
         return explicit;
     }
 
-    if CosmosConfig::from_env().is_local() {
+    if !evm && CosmosConfig::from_env().is_local() {
         return crate::repo::stack_dir()
             .join("proof-api.devnet.json")
             .to_string_lossy()
@@ -112,7 +112,7 @@ impl ProofApiConfig {
 }
 
 pub fn run(root: &Path, cmd: ProofApiCmd) -> Result<()> {
-    let cfg = ProofApiConfig::from_env()?;
+    let cfg = ProofApiConfig::from_env(false)?;
 
     match cmd {
         ProofApiCmd::Start => start(root, &cfg),
