@@ -194,3 +194,42 @@ fn the_negative_suite_skips_rather_than_panics_on_empty_input() {
         .iter()
         .any(|case| matches!(case.outcome, Outcome::Skipped(_))));
 }
+
+#[tokio::test]
+#[ignore = "reads the live mainnet history archive over the network"]
+async fn api_verify_fetches_and_checks_result_pairs() {
+    use scp_exporter::network::Network;
+    use scp_verify::api::{self, Options, Request};
+
+    let f = fixture("mainnet-63907880.json");
+    let trust_root_hex = f.quorum_sets_xdr[0].clone();
+    let options = Options::for_network(Network::Mainnet, None);
+
+    let request = |mutation: Option<&str>| Request {
+        ledger: 63907880,
+        network: Some("mainnet".to_string()),
+        mutation: mutation.map(str::to_string),
+        trust_root: Some(trust_root_hex.clone()),
+        trusted_previous: None,
+    };
+
+    let clean = api::verify(&request(None), &options)
+        .await
+        .expect("verify runs");
+    assert!(
+        clean.evidence.result_pairs > 0,
+        "the api fetches the ledger's transaction results"
+    );
+    assert!(
+        clean.results_verified,
+        "the result set hashes to tx_set_result_hash"
+    );
+
+    let tampered = api::verify(&request(Some("tampered-result-pairs")), &options)
+        .await
+        .expect("verify runs on tampered input");
+    assert!(
+        !tampered.results_verified && !tampered.verified,
+        "reordered result pairs are rejected"
+    );
+}
