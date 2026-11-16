@@ -146,7 +146,7 @@ pub async fn verify_with_cache(
         from: ledger,
         to: ledger,
         next_slot: true,
-        results: false,
+        results: true,
         trust_root_xdr: None,
         jsonl: None,
     };
@@ -180,7 +180,7 @@ pub async fn verify_with_cache(
         envelopes_xdr: slot.externalize_xdr.clone(),
         quorum_sets_xdr: slot.quorum_sets_xdr.clone(),
         recorded_ledger_hash: Some(header.recorded_hash),
-        result_pairs_xdr: Vec::new(),
+        result_pairs_xdr: loaded.results.get(&ledger).cloned().unwrap_or_default(),
         trusted_previous_hash,
     };
 
