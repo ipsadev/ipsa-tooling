@@ -16,7 +16,7 @@ use crate::{
 
 const TYPE_URL: &str = "/ibc.core.client.v2.MsgRegisterCounterparty";
 
-const STELLAR_COMMITMENT_PREFIX: &[u8] = b"ibc";
+const COSMOS_COMMITMENT_PREFIX: [&[u8]; 2] = [b"ibc", b""];
 
 const GAS_LIMIT: u64 = 400_000;
 
@@ -67,7 +67,12 @@ fn stellar(cfg: &Config, root: &Path, client_id: &str, counterparty: &str) -> Re
         bail!("ROUTER_CONTRACT_ADDRESS is not set in .env — deploy the contracts with `ipsa tx contracts deploy --stellar`, which writes it");
     }
 
-    let prefix = format!("[\"{}\"]", hex::encode(STELLAR_COMMITMENT_PREFIX));
+    let segments: Vec<String> = COSMOS_COMMITMENT_PREFIX
+        .iter()
+        .map(|segment| format!("\"{}\"", hex::encode(segment)))
+        .collect();
+
+    let prefix = format!("[{}]", segments.join(","));
 
     logger::step(&format!(
         "router.register_counterparty client_id={client_id} counterparty={counterparty}"
