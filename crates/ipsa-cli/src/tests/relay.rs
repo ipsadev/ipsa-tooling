@@ -1,15 +1,24 @@
-use std::path::Path;
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
 
 use anyhow::{anyhow, bail, Result};
 
 use crate::{
-    config::Config,
-    logger,
+    config::{get, Config},
+    logger, probe, services,
     tx::{self, TransferTx, TxCmd},
 };
 
+const DEFAULT_PACKET_TIMEOUT_SECS: u64 = 600;
+
+const RELAY_PATH_TIMEOUT_SECS: u64 = 120;
+
 pub async fn run(cfg: &Config, root: &Path, http: &reqwest::Client) -> Result<()> {
     super::relayer_routes::ensure(cfg, root)?;
+
+    wait_for_relay_path(cfg).await?;
 
     let stellar_sender = required(
         &cfg.accounts.stellar_sender_address,
@@ -48,6 +57,64 @@ pub async fn run(cfg: &Config, root: &Path, http: &reqwest::Client) -> Result<()
     .await
 }
 
+fn packet_timeout_secs() -> u64 {
+    let raw = get("RELAY_TEST_TIMEOUT_SECS", "");
+
+    if raw.trim().is_empty() {
+        return DEFAULT_PACKET_TIMEOUT_SECS;
+    }
+
+    match raw.trim().parse() {
+        Ok(secs) => secs,
+        Err(_) => {
+            logger::warn(&format!(
+                "RELAY_TEST_TIMEOUT_SECS ({raw}) is not a number — using {DEFAULT_PACKET_TIMEOUT_SECS}s"
+            ));
+
+            DEFAULT_PACKET_TIMEOUT_SECS
+        }
+    }
+}
+
+async fn wait_for_relay_path(cfg: &Config) -> Result<()> {
+    logger::step("waiting for the relay path: relayer api and proof-api reachable");
+
+    let proof_api = services::proof_api::ProofApiConfig::from_env(false)?;
+    let relayer_api = cfg.relayer.api_addr.clone();
+    let proof_api_url = get("PROOF_API_URL", "http://127.0.0.1:3100");
+
+    let deadline = Instant::now() + Duration::from_secs(RELAY_PATH_TIMEOUT_SECS);
+
+    loop {
+        let relayer_up = probe::tcp_ok(&relayer_api);
+        let proof_api_up = services::proof_api::listening(&proof_api);
+
+        if relayer_up && proof_api_up {
+            logger::ok("relay path is up");
+
+            return Ok(());
+        }
+
+        if Instant::now() >= deadline {
+            bail!(
+                "the relay path is not up after {RELAY_PATH_TIMEOUT_SECS}s: relayer api {relayer_api} {}, proof-api {proof_api_url} {}. Bring the stack up with `ipsa start`, start the proof-api with `ipsa proof-api start`, then retry",
+                reachable(relayer_up),
+                reachable(proof_api_up)
+            );
+        }
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
+fn reachable(up: bool) -> &'static str {
+    if up {
+        "reachable"
+    } else {
+        "unreachable"
+    }
+}
+
 async fn relayed_transfer(
     cfg: &Config,
     root: &Path,
@@ -68,7 +135,7 @@ async fn relayed_transfer(
             to,
             amount: 1000,
             denom: denom.to_string(),
-            timeout_secs: 600,
+            timeout_secs: packet_timeout_secs(),
             no_mint: false,
             relay: true,
             wait: true,

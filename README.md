@@ -189,7 +189,9 @@ to the gateway. It runs on the host, not in the stack, from its own checkout
 Output goes to `stack/proof-api.log`. A process started by hand is found by its
 port, so `restart` takes it over. `ipsa start` starts it whenever the cosmos or
 EVM corridor is active (before creating the cosmos clients), independent of
-`--skip-evm`, when nothing is already listening. When the run includes the EVM
+`--skip-evm`, when nothing is already listening; a redeploy (`--deploy-contracts`)
+restarts it first so a process left over from an earlier run cannot serve this run
+from a stale config. When the run includes the EVM
 corridor the config is `programs/stellar-proof-api/testnet.json` (forward plus SP1
 proving modules); a cosmos-only devnet run uses `stack/proof-api.devnet.json`
 (forward only, no SP1 keys), which is also the standalone `ipsa proof-api` default
@@ -507,6 +509,14 @@ under Eureka; token transfer is ICS-20.
 | `ics02-query` | checks the api `/health` + `/stellar/clients` reads and the counterparty `client_states` read |
 
 The relayer reads `relayer.yml` only at startup, and earlier flows add clients to it, so the routing check restarts the relayer once before it runs. It also checks that routing `08-wasm-2` does not count as routing `08-wasm-20`.
+
+### devnet relay setup
+
+`ics20-relay` runs the relay path relayer → `stellar-proof-api` → gateway. For that path to work on the local `simd-1` devnet:
+
+- The proof-api must listen on `0.0.0.0:3100`, not `127.0.0.1`, so the relayer inside docker can reach it at `host.docker.internal:3100`. Both `stack/proof-api.devnet.json` and `programs/stellar-proof-api/testnet.json` already bind `0.0.0.0`.
+- The chain ids must match across the relayer, the proof-api and the gateway. `ipsa` rewrites the proof-api `forward` modules at start time so their non-Stellar side is `COSMOS_CHAIN_ID` (`simd-1` on devnet), matching the `simd-1` chain and routes in `relayer.yml`. After changing `COSMOS_CHAIN_ID` or a proof-api config, restart the proof-api so the running process rereads it: `ipsa proof-api restart`, or `ipsa start --deploy-contracts`, which restarts it for you.
+- `ics20-relay` waits for the relayer api and the proof-api to be reachable before it sends, so a packet is not sent into a relay path that is not up yet. The packet timeout defaults to 600 seconds; set `RELAY_TEST_TIMEOUT_SECS` to change it.
 
 The flow bodies live in `src/tests/` (one file per ICS). They run locally with
 `ipsa test`; CI does not run them.
