@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use crate::{config::Config, logger, shared::Chain, tx::evm::config::EvmCorridorConfig};
 
-mod budget;
+pub mod budget;
 mod config;
 
 pub use config::RelayConfig;
@@ -371,13 +371,13 @@ async fn packets(
     Ok(Some(packets))
 }
 
-enum Outcome {
+pub enum Outcome {
     Pending,
     Relayed { total: usize },
     Failed { failed: usize, total: usize },
 }
 
-fn outcome(packets: &[Packet]) -> Outcome {
+pub fn outcome(packets: &[Packet]) -> Outcome {
     if packets.is_empty() || !packets.iter().all(Packet::settled) {
         return Outcome::Pending;
     }
@@ -396,17 +396,17 @@ fn outcome(packets: &[Packet]) -> Outcome {
     }
 }
 
-struct Packet {
-    state: String,
-    sequence: u64,
-    source_client_id: String,
-    recv: Option<String>,
-    ack: Option<String>,
-    timeout: Option<String>,
+pub struct Packet {
+    pub state: String,
+    pub sequence: u64,
+    pub source_client_id: String,
+    pub recv: Option<String>,
+    pub ack: Option<String>,
+    pub timeout: Option<String>,
 }
 
 impl Packet {
-    fn settled(&self) -> bool {
+    pub fn settled(&self) -> bool {
         matches!(self.state.as_str(), "COMPLETE" | "FAILED")
     }
 }
@@ -541,7 +541,7 @@ fn chain_id(cfg: &Config, chain: Chain, destination: Chain) -> String {
     }
 }
 
-fn infer_chain(tx: &str) -> Option<Chain> {
+pub fn infer_chain(tx: &str) -> Option<Chain> {
     let hash = tx.trim();
 
     if hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -565,7 +565,11 @@ fn unreachable_api(rc: &RelayConfig, error: reqwest::Error) -> anyhow::Error {
     )
 }
 
-fn relay_error(rc: &RelayConfig, status: reqwest::StatusCode, payload: &Value) -> anyhow::Error {
+pub fn relay_error(
+    rc: &RelayConfig,
+    status: reqwest::StatusCode,
+    payload: &Value,
+) -> anyhow::Error {
     let message = payload
         .get("error")
         .and_then(|v| v.as_str())
@@ -595,129 +599,10 @@ fn relay_error(rc: &RelayConfig, status: reqwest::StatusCode, payload: &Value) -
     }
 }
 
-fn is_db_error(message: &str) -> bool {
+pub fn is_db_error(message: &str) -> bool {
     let lowered = message.to_lowercase();
 
     ["sqlstate", "duplicate key", "constraint", "violates"]
         .iter()
         .any(|marker| lowered.contains(marker))
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::{infer_chain, is_db_error, outcome, relay_error, Outcome, Packet, RelayConfig};
-    use crate::shared::Chain;
-
-    #[test]
-    fn infers_stellar_from_a_lowercase_hash() {
-        let hash = "ab".repeat(32);
-
-        assert!(matches!(infer_chain(&hash), Some(Chain::Stellar)));
-    }
-
-    #[test]
-    fn infers_cosmos_from_an_uppercase_hash() {
-        let hash = "AB".repeat(32);
-
-        assert!(matches!(infer_chain(&hash), Some(Chain::Cosmos)));
-    }
-
-    #[test]
-    fn refuses_to_guess_on_ambiguous_hashes() {
-        assert!(infer_chain(&"12".repeat(32)).is_none());
-        assert!(infer_chain(&"aB".repeat(32)).is_none());
-        assert!(infer_chain("deadbeef").is_none());
-        assert!(infer_chain(&"zz".repeat(32)).is_none());
-    }
-
-    fn packet(state: &str) -> Packet {
-        Packet {
-            state: state.to_string(),
-            sequence: 1,
-            source_client_id: "07-tendermint-0".to_string(),
-            recv: None,
-            ack: None,
-            timeout: None,
-        }
-    }
-
-    #[test]
-    fn only_terminal_states_count_as_settled() {
-        assert!(packet("COMPLETE").settled());
-        assert!(packet("FAILED").settled());
-        assert!(!packet("PENDING").settled());
-        assert!(!packet("UNKNOWN").settled());
-    }
-
-    #[test]
-    fn every_packet_must_settle_before_the_relay_is_done() {
-        assert!(matches!(
-            outcome(&[packet("COMPLETE"), packet("PENDING")]),
-            Outcome::Pending
-        ));
-        assert!(matches!(
-            outcome(&[packet("COMPLETE"), packet("COMPLETE")]),
-            Outcome::Relayed { total: 2 }
-        ));
-    }
-
-    #[test]
-    fn an_empty_report_is_not_a_finished_relay() {
-        assert!(matches!(outcome(&[]), Outcome::Pending));
-    }
-
-    #[test]
-    fn a_failed_packet_fails_the_relay() {
-        assert!(matches!(
-            outcome(&[packet("COMPLETE"), packet("FAILED")]),
-            Outcome::Failed {
-                failed: 1,
-                total: 2
-            }
-        ));
-    }
-
-    #[test]
-    fn a_duplicate_key_reads_as_a_db_error() {
-        assert!(is_db_error(
-            "ERROR: duplicate key value violates unique constraint \"index_ibcv2_transfer_packet\" (SQLSTATE 23505)"
-        ));
-    }
-
-    #[test]
-    fn a_connection_failure_is_not_a_db_error() {
-        assert!(!is_db_error("connection refused"));
-    }
-
-    fn config() -> RelayConfig {
-        RelayConfig {
-            api_url: "http://localhost:8080".to_string(),
-            relayer_config: "relayer.yml".to_string(),
-        }
-    }
-
-    #[test]
-    fn a_relayer_db_error_is_shown_as_is() {
-        let payload = json!({
-            "error": "duplicate key value violates unique constraint \"index_ibcv2_transfer_packet\" (SQLSTATE 23505)"
-        });
-
-        let rendered =
-            relay_error(&config(), reqwest::StatusCode::BAD_GATEWAY, &payload).to_string();
-
-        assert!(rendered.contains("index_ibcv2_transfer_packet"));
-        assert!(!rendered.contains("the relayer api is down"));
-    }
-
-    #[test]
-    fn an_unreachable_relayer_still_hints_to_start_it() {
-        let payload = json!({ "error": "upstream connect error" });
-
-        let rendered =
-            relay_error(&config(), reqwest::StatusCode::BAD_GATEWAY, &payload).to_string();
-
-        assert!(rendered.contains("the relayer api is down"));
-    }
 }

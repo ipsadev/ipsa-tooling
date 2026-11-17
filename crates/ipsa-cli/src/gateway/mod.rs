@@ -13,7 +13,7 @@ use ipsa::gateway::{
     },
 };
 use tonic::transport::Channel;
-pub use trust_root::{describe_trust_root, verify_quorum_fingerprints};
+pub use trust_root::{describe_quorum_set, describe_trust_root, verify_quorum_fingerprints};
 
 pub struct Gateway {
     endpoint: String,
@@ -126,7 +126,7 @@ pub fn quorum_configs_json(configs: &[QuorumConfig]) -> String {
     serde_json::Value::Array(entries).to_string()
 }
 
-fn with_scheme(address: &str) -> String {
+pub fn with_scheme(address: &str) -> String {
     let trimmed = address.trim().trim_end_matches('/');
 
     if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
@@ -134,20 +134,4 @@ fn with_scheme(address: &str) -> String {
     }
 
     format!("http://{trimmed}")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::with_scheme;
-
-    #[test]
-    fn a_bare_host_port_gets_a_scheme() {
-        assert_eq!(with_scheme("127.0.0.1:50052"), "http://127.0.0.1:50052");
-        assert_eq!(with_scheme(" gateway:50052/ "), "http://gateway:50052");
-    }
-
-    #[test]
-    fn an_explicit_scheme_is_left_alone() {
-        assert_eq!(with_scheme("https://g:50052"), "https://g:50052");
-    }
 }

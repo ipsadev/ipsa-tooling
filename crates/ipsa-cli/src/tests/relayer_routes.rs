@@ -61,7 +61,7 @@ pub fn ensure(cfg: &Config, root: &Path) -> Result<()> {
     Ok(())
 }
 
-fn names_client(config: &str, id: &str) -> bool {
+pub fn names_client(config: &str, id: &str) -> bool {
     config
         .lines()
         .map(str::trim)
@@ -76,27 +76,4 @@ fn required<'a>(value: &'a str, name: &str) -> Result<&'a str> {
     }
 
     Ok(value)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::names_client;
-
-    const CONFIG: &str = "      counterparty_chains:\n        08-wasm-2: 'stellar-testnet'\n";
-
-    #[test]
-    fn a_listed_client_is_routable() {
-        assert!(names_client(CONFIG, "08-wasm-2"));
-    }
-
-    #[test]
-    fn an_unlisted_client_is_not() {
-        assert!(!names_client(CONFIG, "08-wasm-17"));
-    }
-
-    #[test]
-    fn a_prefix_of_a_listed_client_does_not_count() {
-        assert!(!names_client(CONFIG, "08-wasm-20"));
-        assert!(!names_client("        08-wasm-20: 'x'", "08-wasm-2"));
-    }
 }

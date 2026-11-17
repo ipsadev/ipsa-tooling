@@ -659,7 +659,8 @@ checksum. Defaults shown.
 
 ```
 ipsa/src/
-  main.rs            clap command tree + dispatch
+  lib.rs             module tree, exposed so the integration tests can reach it (pub mod ...)
+  main.rs            clap command tree + dispatch (a thin bin over lib.rs)
   config.rs          base Config: cosmos · stellar · relayer · api · gateway · deployment
   repo.rs            stack-root discovery
   run.rs             process helpers (command / capture / compose / piped)
@@ -686,8 +687,11 @@ ipsa/src/
     stellar/         stellar chain config
     gateway/         gRPC query · config
   tests/             ICS integration flows (ipsa test)
+ipsa/tests/          unit tests, one file per concern (clients · contracts · gateway · proof_api · relay · relayer · service_config · shared · tools)
 scripts/             one-off operator scripts
 ```
+
+The crate is a library plus a thin binary: `src/lib.rs` exposes the module tree and `src/main.rs` is the command-line entry point over it. Unit tests live in `tests/`, one file per concern, rather than inline in the source files.
 
 ## just
 

@@ -1,31 +1,17 @@
-mod accounts;
-mod build;
-mod check;
-mod config;
-mod gateway;
-mod install;
-mod logger;
-mod probe;
-mod repo;
-mod run;
-mod services;
-mod shared;
-mod stack;
-mod start;
-mod tests;
-mod tools;
-mod tx;
-
 use std::time::Duration;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use config::Config;
-use services::{proof_api::ProofApiCmd, relayer::RelayerCmd, ServicesCmd};
-use tests::TestArgs;
-use tx::TxCmd;
-
-use crate::shared::{DownArgs, StartArgs, UpArgs};
+use ipsa_cli::{
+    build, check,
+    config::{self, Config},
+    install, logger, repo,
+    services::{self, proof_api::ProofApiCmd, relayer::RelayerCmd, ServicesCmd},
+    shared::{DownArgs, StartArgs, UpArgs},
+    stack, start,
+    tests::{self, TestArgs},
+    tx::{self, TxCmd},
+};
 
 #[derive(Parser)]
 #[command(

@@ -268,24 +268,11 @@ pub(crate) fn deployer_address(cfg: &ContractsConfig) -> Result<String> {
     address_from_secret(&cfg.signing_key)
 }
 
-fn address_from_secret(secret: &str) -> Result<String> {
+pub fn address_from_secret(secret: &str) -> Result<String> {
     let private = stellar_strkey::ed25519::PrivateKey::from_string(secret)
         .map_err(|e| anyhow::anyhow!("invalid STELLAR_SIGNING_KEY: {e}"))?;
     let signing = ed25519_dalek::SigningKey::from_bytes(&private.0);
     let public = stellar_strkey::ed25519::PublicKey(signing.verifying_key().to_bytes());
 
     Ok(String::from(public.to_string().as_str()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::address_from_secret;
-
-    #[test]
-    fn derives_the_stellar_address_from_the_secret() {
-        let secret = "SCY47WDEEXHWBUD42ZYYG3DPIVX52RLQULF6KRPEEHLRU5TIWDKIJTGH";
-        let address = "GCSWETSPE54NXRXLEXXI2FBIL2KRGOMF6JEJQ62OAGSXXOJVKO6WDAVO";
-
-        assert_eq!(address_from_secret(secret).unwrap(), address);
-    }
 }
