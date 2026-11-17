@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     config::Config,
-    gateway::{quorum_configs_json, verify_quorum_fingerprints, Gateway},
+    gateway::{describe_trust_root, quorum_configs_json, verify_quorum_fingerprints, Gateway},
     logger,
     services::cosmos::tx::CosmosSigner,
     tx::clients::{config::ClientsConfig, CreateSpec},
@@ -59,6 +59,8 @@ pub async fn run(
         &cfg.stellar.pinned_quorum_set_hashes,
     )?;
     logger::ok("quorum sets match the pinned fingerprints");
+
+    describe_trust_root(&params.quorum_configs)?;
 
     let parameters = HashMap::from([
         (
