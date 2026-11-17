@@ -582,7 +582,7 @@ fn relay_error(rc: &RelayConfig, status: reqwest::StatusCode, payload: &Value) -
         reqwest::StatusCode::CONFLICT => {
             Some("the source tx failed on chain, so there is no packet to relay".to_string())
         }
-        reqwest::StatusCode::BAD_GATEWAY => Some(
+        reqwest::StatusCode::BAD_GATEWAY if !is_db_error(message) => Some(
             "the relayer api is down — start it with `ipsa services up --relayer`"
                 .to_string(),
         ),
@@ -595,9 +595,19 @@ fn relay_error(rc: &RelayConfig, status: reqwest::StatusCode, payload: &Value) -
     }
 }
 
+fn is_db_error(message: &str) -> bool {
+    let lowered = message.to_lowercase();
+
+    ["sqlstate", "duplicate key", "constraint", "violates"]
+        .iter()
+        .any(|marker| lowered.contains(marker))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{infer_chain, outcome, Outcome, Packet};
+    use serde_json::json;
+
+    use super::{infer_chain, is_db_error, outcome, relay_error, Outcome, Packet, RelayConfig};
     use crate::shared::Chain;
 
     #[test]
@@ -667,5 +677,47 @@ mod tests {
                 total: 2
             }
         ));
+    }
+
+    #[test]
+    fn a_duplicate_key_reads_as_a_db_error() {
+        assert!(is_db_error(
+            "ERROR: duplicate key value violates unique constraint \"index_ibcv2_transfer_packet\" (SQLSTATE 23505)"
+        ));
+    }
+
+    #[test]
+    fn a_connection_failure_is_not_a_db_error() {
+        assert!(!is_db_error("connection refused"));
+    }
+
+    fn config() -> RelayConfig {
+        RelayConfig {
+            api_url: "http://localhost:8080".to_string(),
+            relayer_config: "relayer.yml".to_string(),
+        }
+    }
+
+    #[test]
+    fn a_relayer_db_error_is_shown_as_is() {
+        let payload = json!({
+            "error": "duplicate key value violates unique constraint \"index_ibcv2_transfer_packet\" (SQLSTATE 23505)"
+        });
+
+        let rendered =
+            relay_error(&config(), reqwest::StatusCode::BAD_GATEWAY, &payload).to_string();
+
+        assert!(rendered.contains("index_ibcv2_transfer_packet"));
+        assert!(!rendered.contains("the relayer api is down"));
+    }
+
+    #[test]
+    fn an_unreachable_relayer_still_hints_to_start_it() {
+        let payload = json!({ "error": "upstream connect error" });
+
+        let rendered =
+            relay_error(&config(), reqwest::StatusCode::BAD_GATEWAY, &payload).to_string();
+
+        assert!(rendered.contains("the relayer api is down"));
     }
 }

@@ -165,6 +165,13 @@ pub async fn run(
         relayer::keys::import(&cfg)?;
         services::up(root, &[Service::Postgres])?;
 
+        if deploy_contracts {
+            logger::detail(
+                "redeploy — the new clients restart packet sequences at 1, so the old relayer rows would collide",
+            );
+            relayer::db::reset(root)?;
+        }
+
         if deployed || created || created_evm {
             logger::detail(
                 "relayer.yml changed — recreating the relayer so it reads the new routes",

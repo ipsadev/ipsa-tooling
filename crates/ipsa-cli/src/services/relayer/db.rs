@@ -1,9 +1,41 @@
+use std::path::Path;
+
 use anyhow::{anyhow, Result};
 use serde_json::Value;
 
-use crate::{config::Config, logger, probe};
+use crate::{
+    config::{self, Config},
+    logger, probe, tools,
+};
 
 const DEFAULT_LIMIT: u32 = 20;
+
+pub fn reset(root: &Path) -> Result<()> {
+    logger::step("resetting the relayer database so packet sequences can restart at 1");
+
+    tools::docker::compose(root, &["up", "-d", "--wait", "postgres"])?;
+
+    let user = config::get("POSTGRES_USER", "relayer");
+    let database = config::get("POSTGRES_DB", "relayer");
+
+    tools::docker::compose(
+        root,
+        &[
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "--username",
+            &user,
+            "--dbname",
+            &database,
+            "--set",
+            "ON_ERROR_STOP=1",
+            "--command",
+            "drop schema public cascade; create schema public;",
+        ],
+    )
+}
 
 pub async fn transfers(
     cfg: &Config,

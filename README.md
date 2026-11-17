@@ -160,7 +160,9 @@ gateway), while the EVM corridor uses its SP1 proving modules.
 Every step is idempotent: a deployed router, a stored checksum and existing
 client ids are kept. Counterparties are only registered when a client was
 created in this run. When the contracts are redeployed, the clients are
-recreated on the new router.
+recreated on the new router, and the relayer database is reset so packet
+sequences can restart at 1 without colliding with the old deployment's rows.
+An ordinary restart keeps the relayer's history.
 
 | Flag | Effect |
 |---|---|
