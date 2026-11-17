@@ -238,6 +238,12 @@ Create the counterparty (`07-tendermint`, on Stellar) and/or Stellar
 id is already set. The Stellar client needs the light-client wasm stored on the
 counterparty first (`tx contracts deploy --cosmos`).
 
+#### Choosing and pinning the trust root
+
+The Stellar client's trust root is the SCP quorum set it is seeded with. The quorum set arrives over the gateway, which is untrusted transport, so the operator pins which one is acceptable rather than trusting whatever is served. Set `PINNED_QUORUM_SET_HASHES` to a comma-separated list of the sha256 fingerprints of the quorum set XDR you trust. Pick one by verifying a ledger independently and reading its fingerprint, for example `scp-verify --ledger <n>`, then pin that hash.
+
+Creating the Stellar client fails closed: it refuses when `PINNED_QUORUM_SET_HASHES` is empty, when the gateway serves no quorum config, and when any served config's fingerprint is not pinned. Before it broadcasts anything it prints the decoded trust root, each config's `valid_from` and fingerprint followed by the quorum set's threshold and validators, so you can confirm what is being seeded.
+
 ### `ipsa tx clients counterparty [--cosmos | --stellar]`
 Register the counterparty on the chosen side (IBC v2 `registerCounterparty`, no
 handshake); with neither flag, registers on both. The Stellar side goes through

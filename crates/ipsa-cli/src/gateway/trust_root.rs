@@ -1,6 +1,9 @@
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use ipsa::gateway::stellar::QuorumConfig;
 use sha2::{Digest, Sha256};
+use stellar_xdr::{Limits, NodeId, PublicKey, ReadXdr, ScpQuorumSet};
+
+use crate::logger;
 
 pub fn verify_quorum_fingerprints(configs: &[QuorumConfig], pinned: &[String]) -> Result<()> {
     if pinned.is_empty() {
@@ -36,6 +39,62 @@ pub fn verify_quorum_fingerprints(configs: &[QuorumConfig], pinned: &[String]) -
     Ok(())
 }
 
+pub fn describe_trust_root(configs: &[QuorumConfig]) -> Result<()> {
+    logger::step("decoded trust root (the quorum configuration seeded into the client):");
+
+    for (index, config) in configs.iter().enumerate() {
+        let digest: [u8; 32] = Sha256::digest(&config.quorum_set_xdr).into();
+
+        logger::detail(&format!(
+            "config {index}: valid_from {}, sha256 {}",
+            config.valid_from,
+            hex::encode(digest)
+        ));
+
+        let set =
+            ScpQuorumSet::from_xdr(&config.quorum_set_xdr, Limits::none()).map_err(|error| {
+                anyhow!("quorum config {index} does not decode as an ScpQuorumSet: {error}")
+            })?;
+
+        for line in describe_quorum_set(&set, 1) {
+            logger::detail(&line);
+        }
+    }
+
+    Ok(())
+}
+
+fn describe_quorum_set(set: &ScpQuorumSet, depth: usize) -> Vec<String> {
+    let indent = "  ".repeat(depth);
+
+    let mut lines = vec![format!(
+        "{indent}threshold {} of {} validator(s) and {} inner set(s)",
+        set.threshold,
+        set.validators.len(),
+        set.inner_sets.len()
+    )];
+
+    for validator in set.validators.iter() {
+        lines.push(format!("{indent}  {}", node_strkey(validator)));
+    }
+
+    for (inner_index, inner) in set.inner_sets.iter().enumerate() {
+        lines.push(format!("{indent}  inner set {inner_index}:"));
+        lines.extend(describe_quorum_set(inner, depth + 2));
+    }
+
+    lines
+}
+
+fn node_strkey(node: &NodeId) -> String {
+    match &node.0 {
+        PublicKey::PublicKeyTypeEd25519(key) => stellar_strkey::ed25519::PublicKey(key.0)
+            .to_string()
+            .as_str()
+            .to_owned(),
+    }
+}
+
 fn normalise(entry: &str) -> Result<[u8; 32]> {
     let trimmed = entry.trim().trim_start_matches("0x");
 
@@ -60,13 +119,26 @@ fn normalise(entry: &str) -> Result<[u8; 32]> {
 #[cfg(test)]
 mod tests {
     use sha2::{Digest, Sha256};
+    use stellar_xdr::{Limits, NodeId, PublicKey, ScpQuorumSet, Uint256, WriteXdr};
 
-    use super::{verify_quorum_fingerprints, QuorumConfig};
+    use super::{
+        describe_quorum_set, describe_trust_root, verify_quorum_fingerprints, QuorumConfig,
+    };
 
     fn config(xdr: &[u8]) -> QuorumConfig {
         QuorumConfig {
             quorum_set_xdr: xdr.to_vec(),
             valid_from: 0,
+        }
+    }
+
+    fn quorum_set() -> ScpQuorumSet {
+        let node = NodeId(PublicKey::PublicKeyTypeEd25519(Uint256([7u8; 32])));
+
+        ScpQuorumSet {
+            threshold: 1,
+            validators: vec![node].try_into().unwrap(),
+            inner_sets: Default::default(),
         }
     }
 
@@ -100,5 +172,32 @@ mod tests {
     fn a_malformed_pin_is_refused() {
         assert!(verify_quorum_fingerprints(&[config(b"abc")], &["zz".to_string()]).is_err());
         assert!(verify_quorum_fingerprints(&[config(b"abc")], &["ab".to_string()]).is_err());
+    }
+
+    #[test]
+    fn the_decoded_root_lists_the_threshold_and_validators() {
+        let lines = describe_quorum_set(&quorum_set(), 1);
+
+        assert!(lines[0].contains("threshold 1 of 1 validator(s) and 0 inner set(s)"));
+
+        let validator = lines
+            .iter()
+            .map(|line| line.trim())
+            .find(|line| line.starts_with('G'))
+            .expect("a validator strkey line");
+
+        assert_eq!(validator.len(), 56);
+    }
+
+    #[test]
+    fn describe_trust_root_accepts_a_real_quorum_set() {
+        let xdr = quorum_set().to_xdr(Limits::none()).unwrap();
+
+        assert!(describe_trust_root(&[config(&xdr)]).is_ok());
+    }
+
+    #[test]
+    fn describe_trust_root_refuses_bytes_that_are_not_a_quorum_set() {
+        assert!(describe_trust_root(&[config(b"not xdr")]).is_err());
     }
 }

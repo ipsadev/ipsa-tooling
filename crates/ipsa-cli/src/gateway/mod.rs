@@ -13,7 +13,7 @@ use ipsa::gateway::{
     },
 };
 use tonic::transport::Channel;
-pub use trust_root::verify_quorum_fingerprints;
+pub use trust_root::{describe_trust_root, verify_quorum_fingerprints};
 
 pub struct Gateway {
     endpoint: String,
