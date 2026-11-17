@@ -8,7 +8,7 @@ mod clients;
 mod counterparty;
 mod query;
 mod relay;
-mod relayer_routes;
+pub mod relayer_routes;
 mod transfer;
 
 #[derive(clap::Args)]

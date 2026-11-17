@@ -33,30 +33,11 @@ impl StellarConfig {
     }
 }
 
-fn split_list(value: &str) -> Vec<String> {
+pub fn split_list(value: &str) -> Vec<String> {
     value
         .split(',')
         .map(str::trim)
         .filter(|entry| !entry.is_empty())
         .map(str::to_string)
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_list;
-
-    #[test]
-    fn an_unset_list_is_empty_not_a_blank_entry() {
-        assert!(split_list("").is_empty());
-        assert!(split_list("  ,  ").is_empty());
-    }
-
-    #[test]
-    fn entries_are_split_and_trimmed() {
-        assert_eq!(
-            split_list(" a , b "),
-            vec!["a".to_string(), "b".to_string()]
-        );
-    }
 }

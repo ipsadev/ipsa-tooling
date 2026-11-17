@@ -5,7 +5,7 @@ const CHECKPOINT_FREQUENCY: u32 = 64;
 
 const LEDGER_SECS: u64 = 5;
 
-const ARCHIVE_MARGIN_SECS: u64 = 120;
+pub const ARCHIVE_MARGIN_SECS: u64 = 120;
 
 const SERVED_SECS: u64 = 180;
 
@@ -101,45 +101,14 @@ pub fn announce(budget: &Budget) {
     ));
 }
 
-fn checkpoint_for(ledger: u32) -> u32 {
+pub fn checkpoint_for(ledger: u32) -> u32 {
     ((ledger / CHECKPOINT_FREQUENCY) + 1) * CHECKPOINT_FREQUENCY - 1
 }
 
-fn ledgers_to_checkpoint(ledger: u32) -> u32 {
+pub fn ledgers_to_checkpoint(ledger: u32) -> u32 {
     checkpoint_for(ledger) - ledger
 }
 
-fn archive_seconds(live: u32) -> u64 {
+pub fn archive_seconds(live: u32) -> u64 {
     u64::from(ledgers_to_checkpoint(live)) * LEDGER_SECS + ARCHIVE_MARGIN_SECS
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{archive_seconds, checkpoint_for, ledgers_to_checkpoint, ARCHIVE_MARGIN_SECS};
-
-    #[test]
-    fn a_checkpoint_is_the_last_ledger_of_its_64_wide_window() {
-        assert_eq!(checkpoint_for(64), 127);
-        assert_eq!(checkpoint_for(0), 63);
-        assert_eq!(
-            checkpoint_for(63),
-            63,
-            "a checkpoint ledger publishes itself"
-        );
-    }
-
-    #[test]
-    fn a_ledger_just_past_a_checkpoint_waits_almost_a_full_window() {
-        assert_eq!(ledgers_to_checkpoint(64), 63);
-    }
-
-    #[test]
-    fn a_ledger_on_a_checkpoint_boundary_waits_the_margin_only() {
-        assert_eq!(archive_seconds(63), ARCHIVE_MARGIN_SECS);
-    }
-
-    #[test]
-    fn the_worst_case_window_outlasts_the_old_flat_default() {
-        assert!(archive_seconds(64) > 300);
-    }
 }
