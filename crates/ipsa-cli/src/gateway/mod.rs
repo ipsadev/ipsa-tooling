@@ -13,7 +13,7 @@ use ipsa::gateway::{
     },
 };
 use tonic::transport::Channel;
-pub use trust_root::{describe_quorum_set, describe_trust_root, verify_quorum_fingerprints};
+pub use trust_root::{describe_quorum_set, describe_trust_root, pin_quorum_configs};
 
 pub struct Gateway {
     endpoint: String,
@@ -119,6 +119,7 @@ pub fn quorum_configs_json(configs: &[QuorumConfig]) -> String {
             serde_json::json!({
                 "quorum_set_xdr": hex::encode(&config.quorum_set_xdr),
                 "valid_from": config.valid_from,
+                "quorum_set_fingerprint": hex::encode(&config.quorum_set_fingerprint),
             })
         })
         .collect();

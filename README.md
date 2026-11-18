@@ -244,6 +244,8 @@ The Stellar client's trust root is the SCP quorum set it is seeded with. The quo
 
 Creating the Stellar client fails closed: it refuses when `PINNED_QUORUM_SET_HASHES` is empty, when the gateway serves no quorum config, and when any served config's fingerprint is not pinned. Before it broadcasts anything it prints the decoded trust root, each config's `valid_from` and fingerprint followed by the quorum set's threshold and validators, so you can confirm what is being seeded.
 
+The pins also go on chain. Each quorum config is sent to the gateway with `quorum_set_fingerprint` set to the pin it matched, and the Stellar light client (from the release that closes ipsadev/stellar-light-client#10) refuses any quorum set that does not hash to its fingerprint, at creation, recovery, migration and on every update. Before signing, the CLI checks that the gateway's client state carries exactly the pinned quorum configs: the same quorum sets, `valid_from` values and fingerprints, and no more or fewer. Read them back after creation with `gaiad q ibc client state <client-id> --node <rpc>`.
+
 ### `ipsa tx clients counterparty [--cosmos | --stellar]`
 Register the counterparty on the chosen side (IBC v2 `registerCounterparty`, no
 handshake); with neither flag, registers on both. The Stellar side goes through

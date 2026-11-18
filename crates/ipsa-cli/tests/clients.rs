@@ -5,19 +5,36 @@ use ibc_proto::{
         core::client::v1::MsgCreateClient, lightclients::wasm::v1::ClientState as WasmClientState,
     },
 };
-use ipsa::gateway::stellar::StellarClientState;
+use ipsa::gateway::stellar::{QuorumConfig, StellarClientState};
 use ipsa_cli::tx::clients::stellar::{
     client_id_from, expected_network_id, verify_stellar_client_state,
 };
 use prost13::Message;
 use serde_json::json;
 
+fn pinned() -> Vec<QuorumConfig> {
+    vec![QuorumConfig {
+        quorum_set_xdr: b"abc".to_vec(),
+        valid_from: 0,
+        quorum_set_fingerprint: vec![0x5a; 32],
+    }]
+}
+
 fn create_client_tx(router: [u8; 32], topic: &[u8], network_id: [u8; 32]) -> Vec<u8> {
+    create_client_tx_with(router, topic, network_id, pinned())
+}
+
+fn create_client_tx_with(
+    router: [u8; 32],
+    topic: &[u8],
+    network_id: [u8; 32],
+    quorum_configs: Vec<QuorumConfig>,
+) -> Vec<u8> {
     let stellar = StellarClientState {
         chain_id: "stellar-testnet".to_string(),
         latest_height: None,
         frozen_height: None,
-        quorum_configs: Vec::new(),
+        quorum_configs,
         proof_specs: Vec::new(),
         network_id: network_id.to_vec(),
         max_consensus_age: 0,
@@ -59,7 +76,7 @@ fn a_matching_create_client_tx_is_accepted() {
 
     let tx = create_client_tx(router, b"ibc_root", network);
 
-    verify_stellar_client_state(&tx, &strkey, "stellar-testnet").unwrap();
+    verify_stellar_client_state(&tx, &strkey, "stellar-testnet", &pinned()).unwrap();
 }
 
 #[test]
@@ -69,7 +86,8 @@ fn a_create_client_tx_for_another_router_is_refused() {
 
     let tx = create_client_tx([9u8; 32], b"ibc_root", network);
 
-    let error = verify_stellar_client_state(&tx, &strkey, "stellar-testnet").unwrap_err();
+    let error =
+        verify_stellar_client_state(&tx, &strkey, "stellar-testnet", &pinned()).unwrap_err();
 
     assert!(error.to_string().contains("router_contract_id"));
 }
@@ -82,9 +100,67 @@ fn a_create_client_tx_with_a_foreign_root_topic_is_refused() {
 
     let tx = create_client_tx(router, b"not_ibc_root", network);
 
-    let error = verify_stellar_client_state(&tx, &strkey, "stellar-testnet").unwrap_err();
+    let error =
+        verify_stellar_client_state(&tx, &strkey, "stellar-testnet", &pinned()).unwrap_err();
 
     assert!(error.to_string().contains("root_event_topic"));
+}
+
+fn refused_with(quorum_configs: Vec<QuorumConfig>) -> String {
+    let router = [7u8; 32];
+    let strkey = stellar_strkey::Contract(router).to_string();
+    let network = expected_network_id("stellar-testnet");
+
+    let tx = create_client_tx_with(router, b"ibc_root", network, quorum_configs);
+
+    verify_stellar_client_state(&tx, &strkey, "stellar-testnet", &pinned())
+        .unwrap_err()
+        .to_string()
+}
+
+#[test]
+fn a_create_client_tx_that_drops_the_fingerprint_is_refused() {
+    let mut configs = pinned();
+
+    configs[0].quorum_set_fingerprint = Vec::new();
+
+    assert!(refused_with(configs).contains("carries fingerprint"));
+}
+
+#[test]
+fn a_create_client_tx_that_swaps_the_fingerprint_is_refused() {
+    let mut configs = pinned();
+
+    configs[0].quorum_set_fingerprint = vec![0x11; 32];
+
+    assert!(refused_with(configs).contains("carries fingerprint"));
+}
+
+#[test]
+fn a_create_client_tx_that_swaps_the_quorum_set_is_refused() {
+    let mut configs = pinned();
+
+    configs[0].quorum_set_xdr = b"evil".to_vec();
+
+    assert!(refused_with(configs).contains("differs from the pinned"));
+}
+
+#[test]
+fn a_create_client_tx_that_moves_valid_from_is_refused() {
+    let mut configs = pinned();
+
+    configs[0].valid_from = 50;
+
+    assert!(refused_with(configs).contains("differs from the pinned"));
+}
+
+#[test]
+fn a_create_client_tx_with_an_extra_quorum_config_is_refused() {
+    let mut configs = pinned();
+
+    configs.extend(pinned());
+
+    assert!(refused_with(configs).contains("not the 1 pinned"));
 }
 
 #[test]
