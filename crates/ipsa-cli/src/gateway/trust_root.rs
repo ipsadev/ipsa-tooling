@@ -5,17 +5,20 @@ use stellar_xdr::{Limits, NodeId, PublicKey, ReadXdr, ScpQuorumSet};
 
 use crate::logger;
 
-pub fn verify_quorum_fingerprints(configs: &[QuorumConfig], pinned: &[String]) -> Result<()> {
+pub fn pin_quorum_configs(
+    configs: &[QuorumConfig],
+    pinned: &[String],
+) -> Result<Vec<QuorumConfig>> {
     if pinned.is_empty() {
         bail!(
-            "PINNED_QUORUM_SET_HASHES is empty — the quorum sets arrive over the gateway, which is \
+            "PINNED_QUORUM_SET_HASHES is empty: the quorum sets arrive over the gateway, which is \
              untrusted transport. Verify one independently (scp-verify --ledger <n>) and pin its \
              sha256 before creating a client"
         );
     }
 
     if configs.is_empty() {
-        bail!("the gateway served no quorum configs — there is no trust root to check");
+        bail!("the gateway served no quorum configs, so there is no trust root to check");
     }
 
     let allowed: Vec<[u8; 32]> = pinned
@@ -23,20 +26,40 @@ pub fn verify_quorum_fingerprints(configs: &[QuorumConfig], pinned: &[String]) -
         .map(|entry| normalise(entry))
         .collect::<Result<_>>()?;
 
+    let mut pinned_configs = Vec::with_capacity(configs.len());
+
     for (index, config) in configs.iter().enumerate() {
         let digest: [u8; 32] = Sha256::digest(&config.quorum_set_xdr).into();
 
-        if !allowed.contains(&digest) {
-            bail!(
-                "quorum config {index} (valid_from {}) hashes to {} which is not pinned — refusing \
+        let pin = allowed.iter().find(|pin| **pin == digest).ok_or_else(|| {
+            anyhow!(
+                "quorum config {index} (valid_from {}) hashes to {} which is not pinned; refusing \
                  to seed a light client with a validator set served over untrusted transport",
                 config.valid_from,
                 hex::encode(digest)
+            )
+        })?;
+
+        if !config.quorum_set_fingerprint.is_empty()
+            && config.quorum_set_fingerprint.as_slice() != pin.as_slice()
+        {
+            bail!(
+                "quorum config {index} (valid_from {}) arrived with fingerprint {}, which is not \
+                 the sha256 of its quorum set {}",
+                config.valid_from,
+                hex::encode(&config.quorum_set_fingerprint),
+                hex::encode(pin)
             );
         }
+
+        pinned_configs.push(QuorumConfig {
+            quorum_set_xdr: config.quorum_set_xdr.clone(),
+            valid_from: config.valid_from,
+            quorum_set_fingerprint: pin.to_vec(),
+        });
     }
 
-    Ok(())
+    Ok(pinned_configs)
 }
 
 pub fn describe_trust_root(configs: &[QuorumConfig]) -> Result<()> {

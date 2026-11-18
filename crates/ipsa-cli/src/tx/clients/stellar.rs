@@ -5,14 +5,14 @@ use cosmrs::{proto::cosmos::tx::v1beta1::TxBody, Any};
 use ibc_proto::ibc::{
     core::client::v1::MsgCreateClient, lightclients::wasm::v1::ClientState as WasmClientState,
 };
-use ipsa::gateway::stellar::StellarClientState;
+use ipsa::gateway::stellar::{QuorumConfig, StellarClientState};
 use prost13::Message;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use crate::{
     config::Config,
-    gateway::{describe_trust_root, quorum_configs_json, verify_quorum_fingerprints, Gateway},
+    gateway::{describe_trust_root, pin_quorum_configs, quorum_configs_json, Gateway},
     logger,
     services::cosmos::tx::CosmosSigner,
     tx::clients::{config::ClientsConfig, CreateSpec},
@@ -54,18 +54,18 @@ pub async fn run(
         "checking {} quorum config(s) against the pinned fingerprints",
         params.quorum_configs.len()
     ));
-    verify_quorum_fingerprints(
+    let quorum_configs = pin_quorum_configs(
         &params.quorum_configs,
         &cfg.stellar.pinned_quorum_set_hashes,
     )?;
     logger::ok("quorum sets match the pinned fingerprints");
 
-    describe_trust_root(&params.quorum_configs)?;
+    describe_trust_root(&quorum_configs)?;
 
     let parameters = HashMap::from([
         (
             "quorum_configs".to_string(),
-            quorum_configs_json(&params.quorum_configs),
+            quorum_configs_json(&quorum_configs),
         ),
         ("wasm_checksum".to_string(), checksum),
     ]);
@@ -84,8 +84,12 @@ pub async fn run(
         &tx,
         cfg.deployment.ibc_router.trim(),
         cfg.stellar.chain_id.as_str(),
+        &quorum_configs,
     )?;
-    logger::ok("router, network and root-event topic match the operator's configuration");
+    logger::ok(
+        "router, network, root-event topic and pinned quorum configs match the operator's \
+         configuration",
+    );
 
     let signer = CosmosSigner::from_config(&cfg.cosmos, http.clone())?;
 
@@ -163,7 +167,12 @@ pub fn expected_network_id(chain_id: &str) -> [u8; 32] {
     Sha256::digest(passphrase.as_bytes()).into()
 }
 
-pub fn verify_stellar_client_state(tx: &[u8], router: &str, chain_id: &str) -> Result<()> {
+pub fn verify_stellar_client_state(
+    tx: &[u8],
+    router: &str,
+    chain_id: &str,
+    quorum_configs: &[QuorumConfig],
+) -> Result<()> {
     let message = single_message(tx)?;
 
     let create = MsgCreateClient::decode(message.value.as_slice())
@@ -209,6 +218,39 @@ pub fn verify_stellar_client_state(tx: &[u8], router: &str, chain_id: &str) -> R
              network for chain {chain_id}",
             hex::encode(&stellar.network_id),
         );
+    }
+
+    if stellar.quorum_configs.len() != quorum_configs.len() {
+        bail!(
+            "refusing to create the client: the gateway's client state carries {} quorum \
+             config(s), not the {} pinned",
+            stellar.quorum_configs.len(),
+            quorum_configs.len()
+        );
+    }
+
+    for (index, (served, pinned)) in stellar
+        .quorum_configs
+        .iter()
+        .zip(quorum_configs)
+        .enumerate()
+    {
+        if served.quorum_set_fingerprint != pinned.quorum_set_fingerprint {
+            bail!(
+                "refusing to create the client: quorum config {index} carries fingerprint {:?}, \
+                 not the pinned {}",
+                hex::encode(&served.quorum_set_fingerprint),
+                hex::encode(&pinned.quorum_set_fingerprint)
+            );
+        }
+
+        if served != pinned {
+            bail!(
+                "refusing to create the client: quorum config {index} differs from the pinned \
+                 configuration (valid_from {} or its quorum set)",
+                served.valid_from
+            );
+        }
     }
 
     Ok(())
